@@ -233,7 +233,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       <button type="button" class="btn sm ghost" style="margin-top:8px" onclick="cancelMfaLogin()">Annuler</button>
       <div class="err" id="mfaLoginErr"></div>
     </div>
-    <div class="login-copy">© aksantic 2026</div>
+    <div class="login-copy">Propulsé par <a href="https://www.aksantictech.com" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">aksantic Tech</a> © 2026</div>
   </div>
 </div>
 
@@ -1121,9 +1121,10 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
       const {error}=await SB.auth.signInWithPassword({email:uname2email(u),password:p});
       if(error){
         const m=(error.message||'').toLowerCase();
-        if(m.includes('confirm'))errEl.textContent='E-mail non confirmé. Dans Supabase → Authentication → Providers → Email, désactivez « Confirm email » (ou confirmez le compte), puis réessayez.';
-        else if(m.includes('invalid'))errEl.textContent='Identifiant ou mot de passe incorrect — ou le compte n\'existe pas encore dans Supabase (Authentication → Users → Add user : '+uname2email(u)+').';
-        else errEl.textContent='Échec de connexion : '+error.message;
+        console.warn('Connexion : ',error.message,'| compte attendu :',uname2email(u));
+        if(m.includes('confirm'))errEl.textContent='Ce compte n\'est pas encore activé. Contactez votre administrateur.';
+        else if(m.includes('invalid'))errEl.textContent='Identifiant ou mot de passe incorrect.';
+        else errEl.textContent='Connexion impossible. Réessayez ou contactez votre administrateur.';
         return;
       }
       // double authentification (2FA) : si un facteur vérifié existe, demander le code avant d'entrer
@@ -1141,8 +1142,8 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
         }
       }catch(ex){console.warn('mfa check',ex);}
       const ok=await afterAuth();
-      if(!ok)errEl.textContent='Connexion réussie mais profil introuvable. Dans Supabase (SQL Editor), créez le profil de ce compte (voir le script SQL, section amorçage).';
-    }catch(ex){errEl.textContent='Erreur : '+(ex.message||ex);}
+      if(!ok)errEl.textContent='Connexion impossible. Contactez votre administrateur.';
+    }catch(ex){console.warn('login',ex);errEl.textContent='Connexion impossible. Réessayez ou contactez votre administrateur.';}
     return;
   }
   // mode local (hors-ligne / démo)
@@ -1164,7 +1165,7 @@ async function afterAuth(){
     if(!user)return false;
     const {data:prof,error}=await SB.from('profiles').select('*').eq('id',user.id).maybeSingle();
     if(error){console.warn('profiles',error);
-      toast('Lecture du profil impossible : '+error.message+' (le script SQL a-t-il été exécuté ?)','warn');
+      toast('Connexion impossible pour le moment. Contactez votre administrateur.','warn');
       await SB.auth.signOut();return false;}
     if(!prof){await SB.auth.signOut();return false;}
     SESSION={user:prof.username,code:prof.province||'national',role:prof.role,isAdmin:(prof.role==='superadmin'||prof.role==='admin'),uid:user.id};

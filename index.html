@@ -2,8 +2,16 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Outil de Planification et Suivi - CAGF</title>
+<!-- PWA : installation en tant qu'application "CAGF-Plan" -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00529b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="CAGF-Plan">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png" type="image/png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -42,6 +50,10 @@ a{color:var(--blue2)}
 .topbar-left .emblem img{animation:logoFloatSm 3s ease-in-out infinite}
 .login-copy{margin-top:16px;text-align:center;font-size:11px;color:var(--muted)}
 .wa-link,.mail-link{display:inline-flex;align-items:center;gap:7px;color:#0a7a5a;text-decoration:none;font-weight:600;margin-top:4px}
+.pw-wrap{position:relative}
+.pw-wrap input{width:100%;padding-right:42px}
+.pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;opacity:.6;padding:4px}
+.pw-eye:hover{opacity:1}
 .wa-link svg{flex:0 0 auto}
 .field{margin-bottom:15px}
 .field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:6px}
@@ -87,6 +99,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue2);b
   cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s}
 .nav button:hover{background:var(--softblue);color:var(--blue)}
 .nav button.active{color:var(--blue);border-bottom-color:var(--red);background:var(--softblue)}
+/* ----- Navigation mobile (barre flottante en bas, icônes) ----- */
+.mobile-nav{display:none}
+@media(max-width:768px){
+  .nav{display:none}
+  .mobile-nav{
+    display:flex;position:fixed;left:10px;right:10px;bottom:12px;z-index:60;
+    background:#fff;border-radius:999px;box-shadow:0 10px 30px rgba(0,40,80,.22);
+    padding:6px;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);
+  }
+  .mobile-nav::-webkit-scrollbar{display:none}
+  .mobile-nav button{
+    flex:1 0 auto;min-width:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;padding:8px 10px;border:none;background:none;border-radius:999px;color:var(--muted);
+    font-size:9px;font-weight:700;cursor:pointer;transition:.15s;
+  }
+  .mobile-nav button .mn-ic{font-size:19px;line-height:1}
+  .mobile-nav button.active{background:var(--blue);color:#fff}
+  .wrap{padding-bottom:92px}
+  .topbar-in{flex-wrap:wrap}
+}
 .wrap{max-width:1480px;margin:0 auto;padding:22px}
 .page{animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -180,7 +213,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
 .pc-file-label a{color:#0a7a5a;text-decoration:none;font-weight:600}
 .just-summary{margin:8px 0 4px;font-size:13px;font-weight:600;display:flex;gap:18px;flex-wrap:wrap}
 .just-summary .rest-red{color:#b91c1c}.just-summary .ok-green{color:#0f9d58}
-@media print{.topbar,.nav,.toolbar,.no-print{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:1px solid #ccc}}
+@media print{.topbar,.nav,.mobile-nav,.toolbar,.no-print{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:1px solid #ccc}}
 </style>
 </head>
 <body>
@@ -201,10 +234,24 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       </div>
       <div class="field">
         <label>Mot de passe</label>
-        <input type="password" id="loginPass" placeholder="Votre mot de passe" required>
+        <div class="pw-wrap">
+          <input type="password" id="loginPass" placeholder="Votre mot de passe" required>
+          <button type="button" class="pw-eye" onclick="togglePw('loginPass',this)" title="Afficher/masquer" tabindex="-1">👁️</button>
+        </div>
       </div>
       <button type="submit" class="btn">Se connecter</button>
       <div class="err" id="loginErr"></div>
+      <div style="text-align:center;margin-top:6px">
+        <a href="#" onclick="toggleForgotPw();return false;" class="muted small" style="text-decoration:underline">Mot de passe oublié ?</a>
+      </div>
+      <div id="forgotPwBox" class="hidden" style="margin-top:10px">
+        <div class="hintbox" style="background:#fff6e6;border-left:4px solid #b8860b">
+          Pour des raisons de sécurité, la réinitialisation se fait par l'administrateur. Écrivez-lui en précisant votre nom d'utilisateur :<br>
+          <a class="mail-link" href="#" id="forgotMailLink" data-x="YWtzYW50aWN0ZWNoQGdtYWlsLmNvbQ==" onmouseenter="revealMail(this)" onfocus="revealMail(this)" onclick="return openForgotMail(this)" title="Envoyer un e-mail" style="margin-top:6px;display:inline-flex">
+            <span class="mail-ico">✉️</span> <span class="mail-txt">aksa•••••••@gmail.com</span>
+          </a>
+        </div>
+      </div>
       <div class="hintbox">
         <b style="color:var(--blue)">Pour tout contact :</b><br>
         <a class="wa-link" href="#" id="waLink" data-x="MjQzODAxNjU1NzI2" data-d="KzI0MyA4MDEgNjU1IDcyNg==" onmouseenter="revealWA(this)" onfocus="revealWA(this)" onclick="return openWA(this)" title="Contacter sur WhatsApp">
@@ -257,12 +304,14 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
           <div><b id="whoName">—</b></div>
           <div class="role" id="whoRole">—</div>
         </div>
+        <button class="btn sm hidden" id="pwaInstallBtn" onclick="installPwa()" title="Installer l'application sur cet appareil">📲 Installer</button>
         <button class="btn sm grey" onclick="logout()">Déconnexion</button>
       </div>
     </div>
   </div>
 
   <div class="nav"><div class="nav-in" id="navBar"></div></div>
+  <nav class="mobile-nav" id="mobileNavBar"></nav>
 
   <div class="wrap">
 
@@ -686,9 +735,9 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         <h3>🔐 Mon mot de passe</h3>
         <div class="scope" style="margin-bottom:8px">Modifiez votre mot de passe. Il vous sera demandé votre mot de passe actuel pour confirmer.</div>
         <div class="form-row">
-          <div class="field"><label>Mot de passe actuel</label><input type="password" id="myCurPass" autocomplete="current-password"></div>
-          <div class="field"><label>Nouveau mot de passe</label><input type="password" id="myNewPass" autocomplete="new-password"></div>
-          <div class="field"><label>Confirmer le nouveau</label><input type="password" id="myNewPass2" autocomplete="new-password"></div>
+          <div class="field"><label>Mot de passe actuel</label><div class="pw-wrap"><input type="password" id="myCurPass" autocomplete="current-password"><button type="button" class="pw-eye" onclick="togglePw('myCurPass',this)" tabindex="-1">👁️</button></div></div>
+          <div class="field"><label>Nouveau mot de passe</label><div class="pw-wrap"><input type="password" id="myNewPass" autocomplete="new-password"><button type="button" class="pw-eye" onclick="togglePw('myNewPass',this)" tabindex="-1">👁️</button></div></div>
+          <div class="field"><label>Confirmer le nouveau</label><div class="pw-wrap"><input type="password" id="myNewPass2" autocomplete="new-password"><button type="button" class="pw-eye" onclick="togglePw('myNewPass2',this)" tabindex="-1">👁️</button></div></div>
         </div>
         <button class="btn sm" onclick="changeMyPass()">Mettre à jour mon mot de passe</button>
       </div>
@@ -1232,6 +1281,18 @@ function buildNav(){
     const b=document.createElement('button');b.dataset.page=id;b.textContent=lbl;
     b.onclick=()=>switchPage(id);bar.appendChild(b);
   });
+  // barre mobile (icônes) — même liste de menus, sous forme de boutons compacts
+  const mbar=document.getElementById('mobileNavBar');if(mbar){
+    mbar.innerHTML='';
+    list.forEach(([id,lbl])=>{
+      const m=/^(\S+)\s+(.*)$/.exec(lbl); // sépare l'emoji du texte
+      const icon=m?m[1]:'•', text=m?m[2]:lbl;
+      const shortText=text.length>10?text.slice(0,9)+'…':text;
+      const b=document.createElement('button');b.dataset.page=id;
+      b.innerHTML='<span class="mn-ic">'+icon+'</span><span>'+esc(shortText)+'</span>';
+      b.onclick=()=>switchPage(id);mbar.appendChild(b);
+    });
+  }
 }
 let CURRENT='dashboard';
 function switchPage(id){
@@ -1239,6 +1300,7 @@ function switchPage(id){
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.getElementById('page-'+id).classList.remove('hidden');
   document.querySelectorAll('#navBar button[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
+  document.querySelectorAll('#mobileNavBar button[data-page]').forEach(b=>b.classList.toggle('active',b.dataset.page===id));
   renderCurrent();
 }
 function renderCurrent(){
@@ -2365,6 +2427,15 @@ document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>{if
 
 /* ===================== CONTACT (anti-robot) ===================== */
 function _dec(s){try{return decodeURIComponent(escape(atob(s)));}catch(e){return atob(s);}}
+function togglePw(id,btn){const el=document.getElementById(id);if(!el)return;
+  const show=el.type==='password';el.type=show?'text':'password';btn.style.opacity=show?'1':'.6';}
+function toggleForgotPw(){document.getElementById('forgotPwBox').classList.toggle('hidden');}
+function openForgotMail(el){
+  const u=(document.getElementById('loginUser').value||'').trim();
+  const subject=encodeURIComponent('Réinitialisation de mot de passe — CAGF'+(u?(' ('+u+')'):''));
+  const body=encodeURIComponent('Bonjour,\n\nJe souhaite réinitialiser le mot de passe du compte suivant :\nNom d\'utilisateur : '+(u||'(à préciser)')+'\n\nMerci.');
+  window.location.href='mailto:'+_dec(el.dataset.x)+'?subject='+subject+'&body='+body;return false;
+}
 function revealWA(el){var t=el.querySelector('.wa-txt');if(t&&el.dataset.d)t.textContent='WhatsApp : '+_dec(el.dataset.d);}
 function openWA(el){var n=_dec(el.dataset.x);window.open('https://wa.me/'+n,'_blank','noopener');return false;}
 function revealMail(el){var t=el.querySelector('.mail-txt');if(t)t.textContent=_dec(el.dataset.x);}
@@ -2398,6 +2469,25 @@ async function boot(){
 }
 boot();
 
+/* ===================== PWA : installation "CAGF-Plan" ===================== */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW',e));});
+}
+let PWA_DEFERRED_PROMPT=null;
+window.addEventListener('beforeinstallprompt',(e)=>{
+  e.preventDefault();PWA_DEFERRED_PROMPT=e;
+  const b=document.getElementById('pwaInstallBtn');if(b)b.classList.remove('hidden');
+});
+async function installPwa(){
+  if(!PWA_DEFERRED_PROMPT)return;
+  PWA_DEFERRED_PROMPT.prompt();
+  await PWA_DEFERRED_PROMPT.userChoice;
+  PWA_DEFERRED_PROMPT=null;
+  const b=document.getElementById('pwaInstallBtn');if(b)b.classList.add('hidden');
+}
+window.addEventListener('appinstalled',()=>{const b=document.getElementById('pwaInstallBtn');if(b)b.classList.add('hidden');});
+
 </script>
+
 </body>
 </html>

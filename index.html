@@ -1055,7 +1055,12 @@ function saveUsers(u){lsSet('cagf_users',u);}
 function roleMenus(role){
   if(role==='gestionnaire')return ['dashboard','activities','advances','just','national','settings'];
   if(role==='province')return ['dashboard','advances','just','settings'];
-  return null; // superadmin / admin = tous les menus
+  return null; // superadmin / admin = tous les menus (sous réserve de roleDeniedMenus)
+}
+/* Menus explicitement refusés à un rôle, même s'il n'a pas de liste restrictive (admin/superadmin) */
+function roleDeniedMenus(role){
+  if(role==='admin')return ['budget']; // Budget Détaillé Non-HP réservé au super administrateur
+  return [];
 }
 function canSettings(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin');}
 function canDB(){return SESSION&&SESSION.role==='superadmin';}
@@ -1299,8 +1304,10 @@ function buildNav(){
   const extra=(SESSION.extraMenus||[]).filter(Boolean);
   const allowed=allowed0 ? Array.from(new Set([...allowed0,...extra])) : null;
   const hid=hiddenMenus();
+  const denied=roleDeniedMenus(SESSION.role);
   let list=MENUS.filter(m=>{
     if(allowed && !allowed.includes(m[0]))return false;     // rôle gestionnaire
+    if(denied.includes(m[0]))return false;                   // menu explicitement refusé au rôle (ex: budget pour admin)
     if(hid.includes(m[0]))return false;                      // menus budgétaires masqués
     if(m[0]==='national' && !canAllProv())return false;      // vue nationale (rôles transversaux)
     return true;
@@ -1325,6 +1332,7 @@ function buildNav(){
 }
 let CURRENT='dashboard';
 function menuAllowed(id){
+  if(roleDeniedMenus(SESSION.role).includes(id))return false; // ex : budget refusé à l'admin national
   const allowed0=roleMenus(SESSION.role);
   if(!allowed0)return true; // superadmin/admin : pas de restriction de rôle
   const extra=(SESSION.extraMenus||[]).filter(Boolean);
@@ -2080,11 +2088,11 @@ function renderSettings(){
   const gl=document.getElementById('gestLinesCard');
   if(gl){const showGl=(SESSION.role==='gestionnaire');gl.style.display=showGl?'block':'none';
     if(showGl)document.getElementById('setLinesGest').value=(s.budgetLines||[]).join('\n');}
-  const dataCard=document.getElementById('dataCard');if(dataCard)dataCard.style.display=canSettings()?'block':'none';
+  const dataCard=document.getElementById('dataCard');if(dataCard)dataCard.style.display=canDB()?'block':'none';
   const mfaCard=document.getElementById('mfaCard');
   if(mfaCard){mfaCard.style.display=(isAdmin&&AUTH_MODE)?'block':'none';if(isAdmin&&AUTH_MODE)renderMfaCard();}
   const auditCard=document.getElementById('auditCard');
-  if(auditCard){auditCard.style.display=(isAdmin&&AUTH_MODE)?'block':'none';if(isAdmin&&AUTH_MODE)renderAuditLog();}
+  if(auditCard){auditCard.style.display=(canDB()&&AUTH_MODE)?'block':'none';if(canDB()&&AUTH_MODE)renderAuditLog();}
   renderDbCard();
   if(isAdmin){
     document.getElementById('setSeuil').value=s.seuil;document.getElementById('setDevise').value=s.devise;
@@ -2224,7 +2232,7 @@ function euOnRoleChange(){
   const box=document.getElementById('euMenuBox');
   if(canDB()){ // seul le super administrateur peut affecter des menus supplémentaires
     box.classList.remove('hidden');
-    const base=roleMenus(role)||MENUS.map(m=>m[0]); // null = déjà tous les menus (admin/superadmin)
+    const base=(roleMenus(role)||MENUS.map(m=>m[0])).filter(id=>!roleDeniedMenus(role).includes(id));
     const checkedList=(window.EU_CURRENT_EXTRA||[]);
     document.getElementById('euMenuList').innerHTML=MENUS.map(([id,lbl])=>{
       const already=base.includes(id);

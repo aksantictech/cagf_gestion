@@ -827,6 +827,33 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
 </div></div>
 
 <!-- ===== MODAL: Advance ===== -->
+<div id="editUserModal" class="modal"><div class="modal-card">
+  <div class="modal-head"><h3>Modifier l'utilisateur</h3>
+    <button class="x" onclick="closeModal('editUserModal')">×</button></div>
+  <form id="editUserForm">
+    <input type="hidden" id="euLogin">
+    <div class="form-row">
+      <div class="field"><label>Identifiant</label><input type="text" id="euLoginShow" disabled></div>
+      <div class="field"><label>Nom complet</label><input type="text" id="euName"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Rôle</label><select id="euRole" onchange="euOnRoleChange()">
+        <option value="province">Province (sa province uniquement)</option>
+        <option value="gestionnaire">Gestionnaire</option>
+        <option value="admin">Administrateur national</option>
+        <option value="superadmin">Super administrateur</option>
+      </select></div>
+      <div class="field" id="euProvField"><label>Province rattachée</label><select id="euProv"></select></div>
+    </div>
+    <div id="euMenuBox" class="hidden">
+      <hr style="border:none;border-top:1px solid var(--line);margin:8px 0 14px">
+      <div class="note">Menus supplémentaires accordés à ce compte, en plus de ceux inclus dans son rôle (ex : donner accès au Budget Détaillé à un gestionnaire précis).</div>
+      <div id="euMenuList" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px"></div>
+    </div>
+    <button type="submit" class="btn" style="margin-top:14px">💾 Enregistrer les modifications</button>
+  </form>
+</div></div>
+
 <div id="advModal" class="modal"><div class="modal-card">
   <div class="modal-head"><h3 id="advModalTitle">Nouvelle avance</h3>
     <button class="x" onclick="closeModal('advModal')">×</button></div>
@@ -1199,7 +1226,7 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
   const users=getUsers();
   if(users[u] && users[u].pass===p){
     const role=users[u].role||(users[u].isAdmin?'superadmin':'province');
-    SESSION={user:u,code:users[u].code,role,isAdmin:(role==='superadmin'||role==='admin')};
+    SESSION={user:u,code:users[u].code,role,isAdmin:(role==='superadmin'||role==='admin'),extraMenus:users[u].extraMenus||[]};
     lsSet('cagf_session',SESSION);
     if(canAllProv())ADMIN_SCOPE='kinshasa';
     enterApp();
@@ -1217,7 +1244,7 @@ async function afterAuth(){
       toast('Connexion impossible pour le moment. Contactez votre administrateur.','warn');
       await SB.auth.signOut();return false;}
     if(!prof){await SB.auth.signOut();return false;}
-    SESSION={user:prof.username,code:prof.province||'national',role:prof.role,isAdmin:(prof.role==='superadmin'||prof.role==='admin'),uid:user.id};
+    SESSION={user:prof.username,code:prof.province||'national',role:prof.role,isAdmin:(prof.role==='superadmin'||prof.role==='admin'),uid:user.id,extraMenus:prof.extra_menus||[]};
     await sbLoadAll();SB_ON=true;
     if(canAllProv())ADMIN_SCOPE='kinshasa';
     enterApp();
@@ -1268,7 +1295,9 @@ function buildNav(){
     sel.onchange=()=>{ADMIN_SCOPE=sel.value;renderAll();};
   }else{ps.classList.add('hidden');}
   // boutons de menu : (1) filtre rôle, (2) menus budgétaires masqués, (3) national/paramètres selon droits
-  const allowed=roleMenus(SESSION.role); // null = pas de restriction de rôle
+  const allowed0=roleMenus(SESSION.role); // null = pas de restriction de rôle
+  const extra=(SESSION.extraMenus||[]).filter(Boolean);
+  const allowed=allowed0 ? Array.from(new Set([...allowed0,...extra])) : null;
   const hid=hiddenMenus();
   let list=MENUS.filter(m=>{
     if(allowed && !allowed.includes(m[0]))return false;     // rôle gestionnaire
@@ -1295,7 +1324,14 @@ function buildNav(){
   }
 }
 let CURRENT='dashboard';
+function menuAllowed(id){
+  const allowed0=roleMenus(SESSION.role);
+  if(!allowed0)return true; // superadmin/admin : pas de restriction de rôle
+  const extra=(SESSION.extraMenus||[]).filter(Boolean);
+  return allowed0.includes(id)||extra.includes(id);
+}
 function switchPage(id){
+  if(!menuAllowed(id)){toast('Accès non autorisé pour votre compte.','warn');id='dashboard';}
   CURRENT=id;
   document.querySelectorAll('.page').forEach(p=>p.classList.add('hidden'));
   document.getElementById('page-'+id).classList.remove('hidden');
@@ -2064,27 +2100,38 @@ function renderSettings(){
     document.getElementById('newUserScope').innerHTML=
       '<option value="national">CAGF National</option>'+
       PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
+    // seul un super administrateur peut créer/promouvoir un compte Super administrateur
+    const canGrantSuper=(SESSION.role==='superadmin');
+    document.querySelectorAll('#newUserRole option[value="superadmin"], #euRole option[value="superadmin"]').forEach(o=>{o.disabled=!canGrantSuper;o.hidden=!canGrantSuper;});
     if(AUTH_MODE){
       // comptes gérés par Supabase Auth : on liste la table profiles
       const passHead=document.getElementById('usersPassHead');if(passHead)passHead.textContent='Province';
       SB.from('profiles').select('username,full_name,role,province').order('role').then(({data,error})=>{
         if(error){document.getElementById('usersRows').innerHTML='<tr><td colspan="5" class="empty">Lecture des profils impossible : '+esc(error.message)+'</td></tr>';return;}
-        document.getElementById('usersRows').innerHTML=(data||[]).map(u=>{
+        // un administrateur national (non super admin) ne voit pas les comptes Super administrateur
+        const visible=(SESSION.role==='superadmin')?(data||[]):(data||[]).filter(u=>u.role!=='superadmin');
+        document.getElementById('usersRows').innerHTML=visible.map(u=>{
           const rl=u.role||'province';
           return `<tr><td><b>${esc(u.full_name||u.username)}</b></td><td><code>${esc(u.username)}</code></td>
             <td>${esc(u.province?provName(u.province):'—')}</td><td class="center">${roleBadge[rl]||rl}</td>
-            <td class="center no-print"><button class="iconbtn del" onclick="delUser('${esc(u.username)}')">🗑️ Profil</button></td></tr>`;
+            <td class="center no-print"><button class="iconbtn" onclick="openEditUser('${esc(u.username)}')">✏️ Modifier</button>
+            <button class="iconbtn del" onclick="delUser('${esc(u.username)}')">🗑️</button></td></tr>`;
         }).join('')||'<tr><td colspan="5" class="empty">Aucun profil.</td></tr>';
       });
     }else{
       const users=getUsers();
       const defaultLogins=ALL_ACCOUNTS.map(a=>a.user);
-      document.getElementById('usersRows').innerHTML=Object.keys(users).map(login=>{
+      const entries=Object.keys(users).filter(login=>{
+        const rl=users[login].role||(users[login].isAdmin?'superadmin':'province');
+        return SESSION.role==='superadmin'||rl!=='superadmin';
+      });
+      document.getElementById('usersRows').innerHTML=entries.map(login=>{
         const u=users[login];const isDef=defaultLogins.includes(login);const rl=u.role||(u.isAdmin?'superadmin':'province');
         const name=isDef?(ALL_ACCOUNTS.find(a=>a.user===login).name):(provName(u.code)+(rl==='province'?' — compte additionnel':''));
         return `<tr><td><b>${esc(name)}</b></td><td><code>${esc(login)}</code></td>
           <td><code>${esc(u.pass)}</code></td><td class="center">${roleBadge[rl]||rl}</td>
           <td class="center no-print"><button class="iconbtn" onclick="resetPass('${login}','${u.code}')">Réinitialiser</button>
+          <button class="iconbtn" onclick="openEditUser('${login}')">✏️ Modifier</button>
           ${isDef?'':`<button class="iconbtn del" onclick="delUser('${login}')">🗑️</button>`}</td></tr>`;
       }).join('');
     }
@@ -2166,6 +2213,67 @@ async function delUser(login){
   if(!confirm('Supprimer l\'utilisateur '+login+' ?'))return;
   const u=getUsers();delete u[login];saveUsers(u);renderSettings();toast('Utilisateur supprimé','warn');
 }
+/* ----- modifier un utilisateur (rôle, province, nom, menus supplémentaires) ----- */
+function euFillProvSelect(){
+  document.getElementById('euProv').innerHTML='<option value="national">CAGF National</option>'+
+    PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
+}
+function euOnRoleChange(){
+  const role=document.getElementById('euRole').value;
+  document.getElementById('euProvField').style.display=(role==='province')?'':'none';
+  const box=document.getElementById('euMenuBox');
+  if(canDB()){ // seul le super administrateur peut affecter des menus supplémentaires
+    box.classList.remove('hidden');
+    const base=roleMenus(role)||MENUS.map(m=>m[0]); // null = déjà tous les menus (admin/superadmin)
+    const checkedList=(window.EU_CURRENT_EXTRA||[]);
+    document.getElementById('euMenuList').innerHTML=MENUS.map(([id,lbl])=>{
+      const already=base.includes(id);
+      const checked=already||checkedList.includes(id);
+      return `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:${already?'#f0f2f5':'#fff'}">
+        <input type="checkbox" class="eu-menu-chk" value="${id}" ${checked?'checked':''} ${already?'disabled':''}>
+        <span style="font-size:12px">${esc(lbl)}${already?' <i>(inclus)</i>':''}</span></label>`;
+    }).join('');
+  }else{box.classList.add('hidden');}
+}
+async function openEditUser(login){
+  document.getElementById('euLogin').value=login;
+  document.getElementById('euLoginShow').value=login;
+  euFillProvSelect();
+  let name='',role='province',prov='',extra=[];
+  if(AUTH_MODE){
+    const {data,error}=await SB.from('profiles').select('*').eq('username',login).maybeSingle();
+    if(error||!data)return toast('Profil introuvable','warn');
+    name=data.full_name||'';role=data.role||'province';prov=data.province||'national';extra=data.extra_menus||[];
+  }else{
+    const users=getUsers();const u=users[login];if(!u)return toast('Utilisateur introuvable','warn');
+    name=u.name||'';role=u.role||'province';prov=u.code||'national';extra=u.extraMenus||[];
+  }
+  document.getElementById('euName').value=name;
+  document.getElementById('euRole').value=role;
+  document.getElementById('euProv').value=prov;
+  window.EU_CURRENT_EXTRA=extra;
+  euOnRoleChange();
+  document.getElementById('editUserModal').classList.add('on');
+}
+document.getElementById('editUserForm').addEventListener('submit',async function(e){
+  e.preventDefault();
+  const login=document.getElementById('euLogin').value;
+  const name=document.getElementById('euName').value.trim();
+  const role=document.getElementById('euRole').value;
+  const prov=document.getElementById('euProv').value;
+  const extraMenus=canDB()?[...document.querySelectorAll('.eu-menu-chk:checked:not(:disabled)')].map(c=>c.value):(window.EU_CURRENT_EXTRA||[]);
+  if(AUTH_MODE){
+    const payload={full_name:name,role,province:role==='province'?prov:null,extra_menus:extraMenus};
+    const {error}=await SB.from('profiles').update(payload).eq('username',login);
+    if(error)return toast('Échec de la mise à jour : '+error.message,'warn');
+    logAudit('update','user',login,'Profil modifié — rôle : '+ROLES[role]+(extraMenus.length?(' · menus suppl. : '+extraMenus.join(', ')):''));
+  }else{
+    const users=getUsers();if(!users[login])return toast('Utilisateur introuvable','warn');
+    users[login].name=name;users[login].role=role;users[login].code=prov;users[login].isAdmin=(role==='superadmin'||role==='admin');
+    users[login].extraMenus=extraMenus;saveUsers(users);
+  }
+  closeModal('editUserModal');renderSettings();toast('Compte mis à jour','ok');
+});
 /* ---- Base de données Supabase ---- */
 async function dbConnect(){
   const url=document.getElementById('dbUrl').value.trim(),key=document.getElementById('dbKey').value.trim();

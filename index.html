@@ -462,6 +462,15 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       </div>
       <div class="card">
         <h3>Avances à justifier <span class="pill" id="justAlert"></span></h3>
+        <div style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap">
+          <input type="text" id="justSearch" style="flex:1;min-width:220px" placeholder="🔎 Rechercher (bénéficiaire, structure, téléphone, e-mail)…" oninput="renderJust()">
+          <select id="justFilterStatus" style="width:auto" onchange="renderJust()">
+            <option value="">Tous les statuts</option>
+            <option value="partial">Justifié partiellement</option>
+            <option value="pending">Non justifiée</option>
+            <option value="late">En retard (&gt; seuil)</option>
+          </select>
+        </div>
         <div class="tbl-scroll"><table class="tbl"><thead><tr>
           <th>Date avance</th><th>Bénéficiaire</th><th class="num">Montant</th>
           <th class="num">Justifié</th><th class="num">Reste</th>
@@ -866,6 +875,14 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
     <div class="form-row">
       <div class="field"><label>Bénéficiaire *</label><input type="text" id="advFBen" required></div>
       <div class="field"><label>OP (Ordre de Paiement)</label><input type="text" id="advFOP" placeholder="ex : OP 0033/2026"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Structure du bénéficiaire</label><input type="text" id="advFBenStruct" placeholder="ex : DPS Haut-Katanga, Hôpital Général…"></div>
+      <div class="field"><label>Téléphone du bénéficiaire</label><input type="tel" id="advFBenPhone" placeholder="ex : +243 8xx xxx xxx"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>E-mail du bénéficiaire</label><input type="email" id="advFBenEmail" placeholder="ex : nom@exemple.cd"></div>
+      <div class="field"></div>
     </div>
     <div class="form-row">
       <div class="field"><label>Ligne budgétaire</label><select id="advFLine"></select></div>
@@ -1559,6 +1576,9 @@ function openAdvModal(edit){
     document.getElementById('advId').value=a.id;document.getElementById('advFDate').value=a.date||'';
     if(canAllProv())document.getElementById('advFProv').value=a.province||activeProvince();
     document.getElementById('advFBen').value=a.beneficiary||'';document.getElementById('advFOP').value=a.op||'';
+    document.getElementById('advFBenStruct').value=a.benStructure||'';
+    document.getElementById('advFBenPhone').value=a.benPhone||'';
+    document.getElementById('advFBenEmail').value=a.benEmail||'';
     document.getElementById('advFLine').value=a.lineNo||'';document.getElementById('advFAct').value=a.activity||'';
     document.getElementById('advFAmt').value=a.amount||'';document.getElementById('advFQ').value=a.quarter||quarterOf(a.date)||'Q1';
     document.getElementById('advFJDate').value=a.justifDate||'';
@@ -1578,7 +1598,11 @@ document.getElementById('advForm').addEventListener('submit',function(e){
   const id=document.getElementById('advId').value;
   const pieces=advReadPieces();const jsum=pieces.reduce((s,p)=>s+p.amount,0);
   const obj={province:targetCode,date:document.getElementById('advFDate').value,beneficiary:document.getElementById('advFBen').value,
-    op:document.getElementById('advFOP').value,lineNo:document.getElementById('advFLine').value,
+    op:document.getElementById('advFOP').value,
+    benStructure:document.getElementById('advFBenStruct').value,
+    benPhone:document.getElementById('advFBenPhone').value,
+    benEmail:document.getElementById('advFBenEmail').value,
+    lineNo:document.getElementById('advFLine').value,
     activity:document.getElementById('advFAct').value,amount:+document.getElementById('advFAmt').value||0,
     quarter:document.getElementById('advFQ').value,justifDate:document.getElementById('advFJDate').value,
     justifs:pieces,justifAmount:jsum,returned:+document.getElementById('advFRet').value||0,
@@ -1700,17 +1724,24 @@ function renderJust(){
   const overdue=list.filter(a=>advStatus(a).days>seuil).length;
   const al=document.getElementById('justAlert');
   if(al)al.innerHTML=overdue?('⚠️ '+overdue+' avance(s) en retard (> '+seuil+' j)'):(list.length?list.length+' à justifier':'à jour');
-  document.getElementById('justRows').innerHTML=list.length?list.map(a=>{const st=advStatus(a);const bk=ageBucket(st.days);
+  const term=(document.getElementById('justSearch').value||'').toLowerCase();
+  const fstat=(document.getElementById('justFilterStatus')||{}).value||'';
+  let filtered=list;
+  if(term)filtered=filtered.filter(a=>((a.beneficiary||'')+' '+(a.benStructure||'')+' '+(a.benPhone||'')+' '+(a.benEmail||'')).toLowerCase().includes(term));
+  if(fstat==='late')filtered=filtered.filter(a=>advStatus(a).days>seuil);
+  else if(fstat)filtered=filtered.filter(a=>advStatus(a).key===fstat);
+  document.getElementById('justRows').innerHTML=filtered.length?filtered.map(a=>{const st=advStatus(a);const bk=ageBucket(st.days);
     const js=justifSum(a), rem=advRemaining(a);
     const pieces=(Array.isArray(a.justifs)&&a.justifs.length)?a.justifs.map(p=>esc(p.type)+' : '+fmt(p.amount)).join(' · '):'<span class="muted">aucune pièce</span>';
     const alert=st.days>seuil?' 🔴':'';
-    return `<tr style="background:${bk.bg}"><td>${a.date||''}</td><td><b>${esc(a.beneficiary)}</b></td><td class="num">${fmt(a.amount)}</td>
+    const contact=[a.benStructure,a.benPhone,a.benEmail].filter(Boolean).map(esc).join(' · ');
+    return `<tr style="background:${bk.bg}"><td>${a.date||''}</td><td><b>${esc(a.beneficiary)}</b>${contact?'<br><span class="muted small">'+contact+'</span>':''}</td><td class="num">${fmt(a.amount)}</td>
     <td class="num">${js?fmt(js):'—'}</td><td class="num"><b style="color:#b91c1c">${fmt(rem)}</b></td>
     <td class="small">${pieces}</td>
     <td class="num"><b style="color:${bk.color}">${st.days} j${alert}</b></td>
     <td class="center"><span class="badge ${st.key==='partial'?'b-amber':''}" style="${st.key==='partial'?'':'background:'+bk.color+';color:#fff'}">${st.key==='partial'?'Justifié partiellement':(bk.statut+' · '+bk.label.replace(' jours','j'))}</span></td>
     <td class="center no-print"><button class="iconbtn" onclick="openAdvModal('${a.id}')">Justifier</button></td></tr>`;}).join('')
-    :'<tr><td colspan="9" class="empty">Toutes les avances sont entièrement justifiées ✓</td></tr>';
+    :'<tr><td colspan="9" class="empty">'+(list.length?'Aucun résultat pour ce filtre.':'Toutes les avances sont entièrement justifiées ✓')+'</td></tr>';
 }
 
 /* ===================== RAPPORTS ===================== */
@@ -2428,8 +2459,8 @@ const TEMPLATES={
    sample:[2026,'Gestion de programme','Gestion des subventions','Assurer les frais de fonctionnement de la DPS','11.1 Coûts liés aux bureaux','DPS','Coût administratif par unité de bureau et par trimestre',5000,4,'Approved Funding']},
  trim:{sheet:'Budget Trimestriel',cols:['N° ligne','Activité','Q1','Q2','Q3','Q4'],
    sample:[1,'Assurer les frais de fonctionnement de la DPS',5000,5000,5000,5000]},
- advances:{sheet:'Journal des Avances',cols:['Date avance','Bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Montant rendu','Nature pièces','Commentaires'],
-   sample:['2026-06-01','Dr Jean Mukila','OP 0033/2026','Appuyer les réunions de monitorage','1',9900,'Q2','','','','','']},
+ advances:{sheet:'Journal des Avances',cols:['Date avance','Bénéficiaire','Structure bénéficiaire','Téléphone bénéficiaire','E-mail bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Montant rendu','Nature pièces','Commentaires'],
+   sample:['2026-06-01','Dr Jean Mukila','DPS Haut-Katanga','+243 8xx xxx xxx','jean.mukila@exemple.cd','OP 0033/2026','Appuyer les réunions de monitorage','1',9900,'Q2','','','','','']},
  activities:{sheet:'Plan des Activités',cols:['N° ligne','Module','Intervention','Activité','Responsable','Montant prévu','Trimestre','Échéance','Statut','Avancement %','Date réalisation','Critique','Observations','Registre d\'incidents','Décision'],
    sample:['122-1','Gestion de programme','Suivi & évaluation','Tenir la revue trimestrielle de performance','DPS',16935,'Q2','2026-06-30','En cours',50,'','Oui','Atelier provincial','','']}
 };
@@ -2457,7 +2488,9 @@ function doImport(type,inp){const f=inp.files[0];if(!f)return;const code=activeP
       if(b){d.trim[b.id]={q1:+r['Q1']||0,q2:+r['Q2']||0,q3:+r['Q3']||0,q4:+r['Q4']||0};n++;}});}
     else if(type==='advances'){rows.forEach(r=>{if(!r['Bénéficiaire'])return;
       d.advances.push({id:'a'+Date.now()+Math.floor(Math.random()*1e6),province:code,
-        date:xdate(r['Date avance']),beneficiary:r['Bénéficiaire'],op:r['OP'],activity:r['Activité'],
+        date:xdate(r['Date avance']),beneficiary:r['Bénéficiaire'],op:r['OP'],
+        benStructure:r['Structure bénéficiaire']||'',benPhone:r['Téléphone bénéficiaire']||'',benEmail:r['E-mail bénéficiaire']||'',
+        activity:r['Activité'],
         lineNo:r['Ligne budgétaire']!==''?String(r['Ligne budgétaire']):'',amount:+r['Montant']||0,
         quarter:r['Trimestre']||quarterOf(xdate(r['Date avance']))||'Q1',justifDate:xdate(r['Date justif']),
         justifAmount:+r['Montant justifié']||0,returned:+r['Montant rendu']||0,nature:r['Nature pièces'],comment:r['Commentaires']});n++;});}
@@ -2483,10 +2516,10 @@ function exportSheet(type){const code=activeProvince(),d=getData(code);let aoa,n
       const s=(+al.q1||0)+(+al.q2||0)+(+al.q3||0)+(+al.q4||0);
       aoa.push([b.ln,b.activity,b.total,+al.q1||0,+al.q2||0,+al.q3||0,+al.q4||0,(b.total||0)-s]);});
     name='BudgetTrimestriel_'+y;}
-  else if(type==='advances'){aoa=[['Date avance','Bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Reste à justifier','Montant rendu','Jours non justif.','Statut','Détail pièces','Commentaires']];
+  else if(type==='advances'){aoa=[['Date avance','Bénéficiaire','Structure bénéficiaire','Téléphone bénéficiaire','E-mail bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Reste à justifier','Montant rendu','Jours non justif.','Statut','Détail pièces','Commentaires']];
     d.advances.forEach(a=>{const st=advStatus(a);const js=justifSum(a);const rem=advRemaining(a);
       const det=(Array.isArray(a.justifs)&&a.justifs.length)?a.justifs.map(p=>p.type+'='+p.amount).join(' ; '):(a.nature||'');
-      aoa.push([a.date,a.beneficiary,a.op,a.activity,a.lineNo,a.amount,a.quarter,a.justifDate,js,rem,a.returned,st.days,st.label,det,a.comment]);});
+      aoa.push([a.date,a.beneficiary,a.benStructure||'',a.benPhone||'',a.benEmail||'',a.op,a.activity,a.lineNo,a.amount,a.quarter,a.justifDate,js,rem,a.returned,st.days,st.label,det,a.comment]);});
     name='JournalAvances';}
   else{const acts=d.activities||[];
     aoa=[['N° ligne','Module','Intervention','Activité','Responsable','Montant prévu','Plan T1','Plan T2','Plan T3','Plan T4','Consommé (avances)','Disponible','% réalisation fin.','Trimestre','Échéance','Statut','Avancement %','Date réalisation','Critique','Observations','Registre d\'incidents','Décision']];

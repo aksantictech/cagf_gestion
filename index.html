@@ -856,8 +856,16 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
     </div>
     <div id="euMenuBox" class="hidden">
       <hr style="border:none;border-top:1px solid var(--line);margin:8px 0 14px">
-      <div class="note">Menus supplémentaires accordés à ce compte, en plus de ceux inclus dans son rôle (ex : donner accès au Budget Détaillé à un gestionnaire précis).</div>
+      <div class="note">Menus accordés à ce compte. Décochez pour retirer un menu normalement inclus dans le rôle (ex : masquer les Rapports pour cet administrateur), ou cochez un menu supplémentaire (ex : donner le Budget Détaillé à un gestionnaire précis).</div>
       <div id="euMenuList" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px"></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <div class="note">Changer le mot de passe de ce compte (laisser vide pour ne pas le modifier).</div>
+    <div class="form-row">
+      <div class="field"><label>Nouveau mot de passe</label>
+        <div class="pw-wrap"><input type="password" id="euNewPass" autocomplete="new-password"><button type="button" class="pw-eye" onclick="togglePw('euNewPass',this)" tabindex="-1">👁️</button></div>
+      </div>
+      <div class="field"></div>
     </div>
     <button type="submit" class="btn" style="margin-top:14px">💾 Enregistrer les modifications</button>
   </form>
@@ -1079,6 +1087,16 @@ function roleDeniedMenus(role){
   if(role==='admin')return ['budget']; // Budget Détaillé Non-HP réservé au super administrateur
   return [];
 }
+/* Liste finale des menus autorisés pour la session en cours :
+   (menus du rôle − menus refusés au rôle − menus retirés pour ce compte) + menus accordés en plus pour ce compte */
+function effectiveMenus(){
+  const role=SESSION&&SESSION.role;
+  let base=(roleMenus(role)||MENUS.map(m=>m[0])).filter(id=>!roleDeniedMenus(role).includes(id));
+  const denied=(SESSION&&SESSION.deniedMenus||[]).filter(Boolean);
+  const extra=(SESSION&&SESSION.extraMenus||[]).filter(Boolean);
+  base=base.filter(id=>!denied.includes(id));
+  return Array.from(new Set([...base,...extra]));
+}
 function canSettings(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin');}
 function canDB(){return SESSION&&SESSION.role==='superadmin';}
 function canAllProv(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin'||SESSION.role==='gestionnaire');}
@@ -1248,7 +1266,7 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
   const users=getUsers();
   if(users[u] && users[u].pass===p){
     const role=users[u].role||(users[u].isAdmin?'superadmin':'province');
-    SESSION={user:u,code:users[u].code,role,isAdmin:(role==='superadmin'||role==='admin'),extraMenus:users[u].extraMenus||[]};
+    SESSION={user:u,code:users[u].code,role,isAdmin:(role==='superadmin'||role==='admin'),extraMenus:users[u].extraMenus||[],deniedMenus:users[u].deniedMenus||[]};
     lsSet('cagf_session',SESSION);
     if(canAllProv())ADMIN_SCOPE='kinshasa';
     enterApp();
@@ -1266,7 +1284,7 @@ async function afterAuth(){
       toast('Connexion impossible pour le moment. Contactez votre administrateur.','warn');
       await SB.auth.signOut();return false;}
     if(!prof){await SB.auth.signOut();return false;}
-    SESSION={user:prof.username,code:prof.province||'national',role:prof.role,isAdmin:(prof.role==='superadmin'||prof.role==='admin'),uid:user.id,extraMenus:prof.extra_menus||[]};
+    SESSION={user:prof.username,code:prof.province||'national',role:prof.role,isAdmin:(prof.role==='superadmin'||prof.role==='admin'),uid:user.id,extraMenus:prof.extra_menus||[],deniedMenus:prof.denied_menus||[]};
     await sbLoadAll();SB_ON=true;
     if(canAllProv())ADMIN_SCOPE='kinshasa';
     enterApp();
@@ -1316,20 +1334,16 @@ function buildNav(){
     sel.value=ADMIN_SCOPE;
     sel.onchange=()=>{ADMIN_SCOPE=sel.value;renderAll();};
   }else{ps.classList.add('hidden');}
-  // boutons de menu : (1) filtre rôle, (2) menus budgétaires masqués, (3) national/paramètres selon droits
-  const allowed0=roleMenus(SESSION.role); // null = pas de restriction de rôle
-  const extra=(SESSION.extraMenus||[]).filter(Boolean);
-  const allowed=allowed0 ? Array.from(new Set([...allowed0,...extra])) : null;
+  // boutons de menu : (1) menus effectifs du compte (rôle + accordés − retirés), (2) masqués globalement, (3) national selon droits
+  const allowed=effectiveMenus();
   const hid=hiddenMenus();
-  const denied=roleDeniedMenus(SESSION.role);
   let list=MENUS.filter(m=>{
-    if(allowed && !allowed.includes(m[0]))return false;     // rôle gestionnaire
-    if(denied.includes(m[0]))return false;                   // menu explicitement refusé au rôle (ex: budget pour admin)
-    if(hid.includes(m[0]))return false;                      // menus budgétaires masqués
-    if(m[0]==='national' && !canAllProv())return false;      // vue nationale (rôles transversaux)
+    if(!allowed.includes(m[0]))return false;                  // menu non autorisé pour ce compte
+    if(hid.includes(m[0]))return false;                       // menus budgétaires masqués globalement
+    if(m[0]==='national' && !canAllProv())return false;       // vue nationale (rôles transversaux)
     return true;
   });
-  if(allowed) list=list.slice().sort((a,b)=>allowed.indexOf(a[0])-allowed.indexOf(b[0])); // ordre défini par le rôle
+  list=list.slice().sort((a,b)=>allowed.indexOf(a[0])-allowed.indexOf(b[0])); // ordre : rôle puis menus accordés en plus
   list.forEach(([id,lbl])=>{
     const b=document.createElement('button');b.dataset.page=id;b.textContent=lbl;
     b.onclick=()=>switchPage(id);bar.appendChild(b);
@@ -1349,11 +1363,7 @@ function buildNav(){
 }
 let CURRENT='dashboard';
 function menuAllowed(id){
-  if(roleDeniedMenus(SESSION.role).includes(id))return false; // ex : budget refusé à l'admin national
-  const allowed0=roleMenus(SESSION.role);
-  if(!allowed0)return true; // superadmin/admin : pas de restriction de rôle
-  const extra=(SESSION.extraMenus||[]).filter(Boolean);
-  return allowed0.includes(id)||extra.includes(id);
+  return effectiveMenus().includes(id);
 }
 function switchPage(id){
   if(!menuAllowed(id)){toast('Accès non autorisé pour votre compte.','warn');id='dashboard';}
@@ -2261,36 +2271,39 @@ function euOnRoleChange(){
   const role=document.getElementById('euRole').value;
   document.getElementById('euProvField').style.display=(role==='province')?'':'none';
   const box=document.getElementById('euMenuBox');
-  if(canDB()){ // seul le super administrateur peut affecter des menus supplémentaires
+  if(canDB()){ // seul le super administrateur peut affecter/retirer des menus par compte
     box.classList.remove('hidden');
     const base=(roleMenus(role)||MENUS.map(m=>m[0])).filter(id=>!roleDeniedMenus(role).includes(id));
-    const checkedList=(window.EU_CURRENT_EXTRA||[]);
+    const extraList=(window.EU_CURRENT_EXTRA||[]);
+    const deniedList=(window.EU_CURRENT_DENIED||[]);
     document.getElementById('euMenuList').innerHTML=MENUS.map(([id,lbl])=>{
-      const already=base.includes(id);
-      const checked=already||checkedList.includes(id);
-      return `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:${already?'#f0f2f5':'#fff'}">
-        <input type="checkbox" class="eu-menu-chk" value="${id}" ${checked?'checked':''} ${already?'disabled':''}>
-        <span style="font-size:12px">${esc(lbl)}${already?' <i>(inclus)</i>':''}</span></label>`;
+      const byDefault=base.includes(id);
+      const checked=byDefault?!deniedList.includes(id):extraList.includes(id);
+      return `<label style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:${byDefault?'#f0f2f5':'#fff'}">
+        <input type="checkbox" class="eu-menu-chk" value="${id}" data-default="${byDefault?'1':'0'}" ${checked?'checked':''}>
+        <span style="font-size:12px">${esc(lbl)}${byDefault?' <i>(par défaut du rôle)</i>':''}</span></label>`;
     }).join('');
   }else{box.classList.add('hidden');}
 }
 async function openEditUser(login){
   document.getElementById('euLogin').value=login;
   document.getElementById('euLoginShow').value=login;
+  document.getElementById('euNewPass').value='';
   euFillProvSelect();
-  let name='',role='province',prov='',extra=[];
+  let name='',role='province',prov='',extra=[],denied=[],uid=null;
   if(AUTH_MODE){
     const {data,error}=await SB.from('profiles').select('*').eq('username',login).maybeSingle();
     if(error||!data)return toast('Profil introuvable','warn');
-    name=data.full_name||'';role=data.role||'province';prov=data.province||'national';extra=data.extra_menus||[];
+    name=data.full_name||'';role=data.role||'province';prov=data.province||'national';
+    extra=data.extra_menus||[];denied=data.denied_menus||[];uid=data.id;
   }else{
     const users=getUsers();const u=users[login];if(!u)return toast('Utilisateur introuvable','warn');
-    name=u.name||'';role=u.role||'province';prov=u.code||'national';extra=u.extraMenus||[];
+    name=u.name||'';role=u.role||'province';prov=u.code||'national';extra=u.extraMenus||[];denied=u.deniedMenus||[];
   }
   document.getElementById('euName').value=name;
   document.getElementById('euRole').value=role;
   document.getElementById('euProv').value=prov;
-  window.EU_CURRENT_EXTRA=extra;
+  window.EU_CURRENT_EXTRA=extra;window.EU_CURRENT_DENIED=denied;window.EU_CURRENT_UID=uid;
   euOnRoleChange();
   document.getElementById('editUserModal').classList.add('on');
 }
@@ -2300,19 +2313,62 @@ document.getElementById('editUserForm').addEventListener('submit',async function
   const name=document.getElementById('euName').value.trim();
   const role=document.getElementById('euRole').value;
   const prov=document.getElementById('euProv').value;
-  const extraMenus=canDB()?[...document.querySelectorAll('.eu-menu-chk:checked:not(:disabled)')].map(c=>c.value):(window.EU_CURRENT_EXTRA||[]);
+  const newPass=document.getElementById('euNewPass').value;
+  let extraMenus=window.EU_CURRENT_EXTRA||[], deniedMenus=window.EU_CURRENT_DENIED||[];
+  if(canDB()){
+    extraMenus=[];deniedMenus=[];
+    document.querySelectorAll('.eu-menu-chk').forEach(chk=>{
+      const isDefault=chk.dataset.default==='1';
+      if(isDefault&&!chk.checked)deniedMenus.push(chk.value);
+      if(!isDefault&&chk.checked)extraMenus.push(chk.value);
+    });
+  }
+  if(newPass&&newPass.length<6)return toast('Le nouveau mot de passe doit contenir au moins 6 caractères','warn');
   if(AUTH_MODE){
-    const payload={full_name:name,role,province:role==='province'?prov:null,extra_menus:extraMenus};
+    const payload={full_name:name,role,province:role==='province'?prov:null,extra_menus:extraMenus,denied_menus:deniedMenus};
     const {error}=await SB.from('profiles').update(payload).eq('username',login);
     if(error)return toast('Échec de la mise à jour : '+error.message,'warn');
-    logAudit('update','user',login,'Profil modifié — rôle : '+ROLES[role]+(extraMenus.length?(' · menus suppl. : '+extraMenus.join(', ')):''));
+    logAudit('update','user',login,'Profil modifié — rôle : '+ROLES[role]+
+      (extraMenus.length?(' · menus ajoutés : '+extraMenus.join(', ')):'')+
+      (deniedMenus.length?(' · menus retirés : '+deniedMenus.join(', ')):''));
+    if(newPass){
+      const r=await adminResetPassword(window.EU_CURRENT_UID,newPass);
+      if(!r.ok)return toast('Profil enregistré, mais le mot de passe n\'a pas pu être changé : '+r.msg,'warn');
+      logAudit('password_change','user',login,'Mot de passe réinitialisé par '+SESSION.user);
+    }
   }else{
     const users=getUsers();if(!users[login])return toast('Utilisateur introuvable','warn');
     users[login].name=name;users[login].role=role;users[login].code=prov;users[login].isAdmin=(role==='superadmin'||role==='admin');
-    users[login].extraMenus=extraMenus;saveUsers(users);
+    users[login].extraMenus=extraMenus;users[login].deniedMenus=deniedMenus;
+    if(newPass)users[login].pass=newPass;
+    saveUsers(users);
   }
-  closeModal('editUserModal');renderSettings();toast('Compte mis à jour','ok');
+  closeModal('editUserModal');renderSettings();toast('Compte mis à jour'+(newPass?' (mot de passe changé)':''),'ok');
 });
+/* Réinitialisation du mot de passe d'un AUTRE utilisateur (mode Supabase) :
+   nécessite la clé service_role, jamais exposée au navigateur — appelle donc
+   une Edge Function dédiée qui vérifie que l'appelant est admin/superadmin
+   avant d'effectuer le changement. Voir Edge_Function_admin_reset_password.ts. */
+async function adminResetPassword(targetUid,newPass){
+  if(!targetUid)return{ok:false,msg:'identifiant du compte introuvable'};
+  try{
+    const {data:sess}=await SB.auth.getSession();
+    const token=sess&&sess.session&&sess.session.access_token;
+    if(!token)return{ok:false,msg:'session expirée, reconnectez-vous'};
+    const c=sbConf();
+    const res=await fetch(c.url+'/functions/v1/admin-reset-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':c.key},
+      body:JSON.stringify({target_uid:targetUid,new_password:newPass})
+    });
+    if(!res.ok){
+      let m='fonction indisponible (voir Edge_Function_admin_reset_password.ts pour l\'activer)';
+      try{const j=await res.json();if(j&&j.error)m=j.error;}catch(e){}
+      return{ok:false,msg:m};
+    }
+    return{ok:true};
+  }catch(ex){return{ok:false,msg:(ex.message||'réseau indisponible')+' — la fonction admin-reset-password est-elle déployée ?'};}
+}
 /* ---- Base de données Supabase ---- */
 async function dbConnect(){
   const url=document.getElementById('dbUrl').value.trim(),key=document.getElementById('dbKey').value.trim();

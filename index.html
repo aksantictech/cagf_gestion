@@ -332,8 +332,17 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
           <div class="chart-area"><canvas id="chartAdv"></canvas></div></div>
       </div>
       <div class="card">
+        <h3>📊 Avances par ligne budgétaire <span class="pill">décaissé / justifié / reste</span></h3>
+        <div class="chart-box" style="height:280px"><div class="chart-area"><canvas id="chartByLine"></canvas></div></div>
+        <div class="tbl-scroll" style="margin-top:12px"><table class="tbl"><thead><tr>
+          <th>Ligne budgétaire</th><th class="num">Nb avances</th><th class="num">Montant total</th>
+          <th class="num">Justifié</th><th class="num">Reste à justifier</th></tr></thead>
+          <tbody id="dashByLineRows"></tbody></table></div>
+      </div>
+      <div class="card">
         <h3>⏱️ Avances à risque <span class="pill">classées par âge d'avance</span></h3>
         <div class="tbl-scroll"><table class="tbl"><thead><tr>
+          <th class="hidden" id="dashRiskProvHead">Province</th>
           <th>Bénéficiaire</th><th>OP</th><th>Activité</th><th class="num">Montant</th>
           <th class="center">Date avance</th><th class="center">Date justif.</th>
           <th class="center">Âge d'avance</th><th class="center">Statut</th></tr></thead>
@@ -391,7 +400,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
           La colonne « Réalisé » est calculée à partir des avances payées dans chaque trimestre.</div>
         <div class="tbl-scroll"><table class="tbl"><thead><tr>
           <th>N°</th><th>Activité</th><th class="num">Total annuel</th>
-          <th class="num">Q1</th><th class="num">Q2</th><th class="num">Q3</th><th class="num">Q4</th>
+          <th class="num">T1</th><th class="num">T2</th><th class="num">T3</th><th class="num">T4</th>
           <th class="num">∑ Ventilé</th><th class="num">Écart</th><th class="num">Réalisé (avances)</th></tr></thead>
           <tbody id="trimRows"></tbody>
           <tfoot id="trimFoot"></tfoot>
@@ -404,10 +413,12 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       <div class="page-head">
         <div><h2>Avances</h2><div class="scope" id="advScope"></div></div>
         <div class="toolbar">
-          <button class="btn sm green" onclick="openAdvModal()">＋ Avance</button>
+          <button class="btn sm green" id="advAddBtn" onclick="openAdvModal()">＋ Avance</button>
           <button class="btn sm ghost" onclick="importTemplate('advances')">📥 Modèle</button>
           <button class="btn sm ghost" onclick="document.getElementById('advImport').click()">📤 Importer</button>
           <input type="file" id="advImport" class="hidden" accept=".xlsx,.xls" onchange="doImport('advances',this)">
+          <button class="btn sm blue" id="tompImportBtn" onclick="document.getElementById('tompImport').click()" title="Importer le journal des avances exporté depuis TomPro">📊 Importer depuis TomPro</button>
+          <input type="file" id="tompImport" class="hidden" accept=".xlsx,.xls" onchange="importTomPro(this)">
           <button class="btn sm blue" onclick="exportSheet('advances')">⬇️ Exporter</button>
           <button class="btn sm ghost" onclick="window.print()">🖨️ Imprimer</button>
         </div>
@@ -425,7 +436,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       <div class="card">
         <h3>Journal des avances <span class="pill" id="advCount">0</span></h3>
         <div style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap">
-          <input type="text" id="advSearch" style="flex:1;min-width:220px" placeholder="🔎 Rechercher (bénéficiaire, OP, activité)…" oninput="renderAdvances()">
+          <input type="text" id="advSearch" style="flex:1;min-width:220px" placeholder="🔎 Rechercher (bénéficiaire, OP, activité, réf. TomPro, bailleur)…" oninput="renderAdvances()">
           <select id="advFilterStatus" style="width:auto" onchange="renderAdvances()">
             <option value="">Tous les statuts</option>
             <option value="just">Justifiée</option>
@@ -486,7 +497,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         <div><h2>Plan &amp; Suivi des Activités</h2><div class="scope" id="actScope"></div></div>
         <div class="toolbar">
           <select id="actYear" style="width:auto" onchange="renderActivities()"></select>
-          <button class="btn sm green" onclick="openActModal()">＋ Activité</button>
+          <button class="btn sm green" id="actAddBtn" onclick="openActModal()">＋ Activité</button>
           <button class="btn sm blue" id="actBtnBudget" onclick="genFromBudget()">🔗 Générer depuis le Budget</button>
           <button class="btn sm blue" id="actBtnPlan" onclick="genPlan()">⚙️ Générer un plan-type</button>
           <button class="btn sm ghost" id="actBtnTpl" onclick="importTemplate('activities')">📥 Modèle</button>
@@ -595,10 +606,10 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         <div class="toolbar">
           <select id="repYear" style="width:auto" onchange="renderReport()"></select>
           <div class="seg" id="repPeriod">
-            <button data-p="Q1" onclick="setRepPeriod('Q1')">Q1</button>
-            <button data-p="Q2" onclick="setRepPeriod('Q2')">Q2</button>
-            <button data-p="Q3" onclick="setRepPeriod('Q3')">Q3</button>
-            <button data-p="Q4" onclick="setRepPeriod('Q4')">Q4</button>
+            <button data-p="Q1" onclick="setRepPeriod('Q1')">T1</button>
+            <button data-p="Q2" onclick="setRepPeriod('Q2')">T2</button>
+            <button data-p="Q3" onclick="setRepPeriod('Q3')">T3</button>
+            <button data-p="Q4" onclick="setRepPeriod('Q4')">T4</button>
             <button data-p="S1" onclick="setRepPeriod('S1')">S1</button>
             <button data-p="S2" class="active" onclick="setRepPeriod('S2')">S2</button>
             <button data-p="AN" onclick="setRepPeriod('AN')">Année</button>
@@ -646,6 +657,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         <div class="toolbar">
           <select id="natYear" style="width:auto" onchange="renderNational()"></select>
           <button class="btn sm blue" onclick="exportNational()">⬇️ Exporter</button>
+          <button class="btn sm ghost" onclick="window.print()">🖨️ Imprimer</button>
         </div>
       </div>
       <div class="kpi-grid" id="natKpis"></div>
@@ -702,10 +714,22 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         <div class="field"><label>Éléments de coût (1 par ligne)</label><textarea id="setCost" rows="4"></textarea></div>
         <div class="field"><label>Unités de mesure (1 par ligne)</label><textarea id="setUnits" rows="3"></textarea></div>
         <div class="field"><label>Types de pièces justificatives (1 par ligne)</label><textarea id="setPieces" rows="4" placeholder="Billet d'avion&#10;Go Pass & Taxes&#10;Perdiem&#10;Facture…"></textarea></div>
-        <div class="field"><label>Lignes budgétaires (1 par ligne — proposées automatiquement dans le formulaire des avances)</label><textarea id="setLines" rows="5" placeholder="N°122 - Appuyer la supervision intégrée&#10;N°110 - Frais de fonctionnement DPS…"></textarea></div>
+        <div class="note" style="margin-bottom:8px">📋 Les lignes budgétaires se configurent désormais province par province, dans la carte « Lignes budgétaires » ci-dessous (choisissez la province active en haut de l'écran).</div>
         <div class="field"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="setShowBudget" style="width:auto"> Afficher les menus de planification budgétaire (Budget Détaillé, Budget Trimestriel, Rapports)</label></div>
         <button class="btn sm green" onclick="saveSetup()">💾 Enregistrer la configuration</button>
+      </div>
+
+      <div class="card" id="gestLinesCard" style="display:none">
+        <h3>📋 Lignes budgétaires <span class="pill" id="glProvPill"></span></h3>
+        <div class="scope" style="margin-bottom:8px">Propres à la province active (sélecteur en haut de l'écran). Proposées automatiquement dans les formulaires des avances et des activités de cette province uniquement. Une ligne par rangée.</div>
+        <div class="field"><textarea id="setLinesGest" rows="6" placeholder="N°122 - Appuyer la supervision intégrée&#10;N°110 - Frais de fonctionnement DPS…"></textarea></div>
+        <div class="toolbar">
+          <button class="btn sm green" onclick="saveLinesGest()">💾 Enregistrer les lignes budgétaires</button>
+          <button class="btn sm ghost" onclick="document.getElementById('glImportFile').click()" id="glImportBtn">📥 Importer (Excel)</button>
+          <input type="file" id="glImportFile" class="hidden" accept=".xlsx,.xls" onchange="importLinesGest(this)">
+        </div>
+        <div class="note small" id="glImportHelp" style="margin-top:8px"></div>
       </div>
 
       <div class="card" id="usersCard">
@@ -724,6 +748,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
           <div class="field"><label>Rôle</label><select id="newUserRole" onchange="onNewRoleChange()">
             <option value="province">Province (sa province uniquement)</option>
             <option value="gestionnaire">Gestionnaire (tableau de bord, avances, justifs, vue nationale)</option>
+            <option value="coordonnateur">Coordonnateur (lecture seule, vue globale nationale)</option>
             <option value="admin">Administrateur national (tous les menus + paramètres)</option>
             <option value="superadmin">Super administrateur (tout + base de données)</option>
           </select></div>
@@ -731,13 +756,6 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
         </div>
         <div><button class="btn sm green" onclick="addUser()">Ajouter l'utilisateur</button></div>
         <div style="margin-top:12px"><button class="btn sm ghost" onclick="exportCredentials()">⬇️ Exporter la fiche des identifiants</button></div>
-      </div>
-
-      <div class="card" id="gestLinesCard" style="display:none">
-        <h3>📋 Lignes budgétaires</h3>
-        <div class="scope" style="margin-bottom:8px">Ces lignes sont proposées automatiquement dans les formulaires des avances et des activités. Une ligne par rangée.</div>
-        <div class="field"><textarea id="setLinesGest" rows="6" placeholder="N°122 - Appuyer la supervision intégrée&#10;N°110 - Frais de fonctionnement DPS…"></textarea></div>
-        <button class="btn sm green" onclick="saveLinesGest()">💾 Enregistrer les lignes budgétaires</button>
       </div>
 
       <div class="card">
@@ -850,6 +868,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       <div class="field"><label>Rôle</label><select id="euRole" onchange="euOnRoleChange()">
         <option value="province">Province (sa province uniquement)</option>
         <option value="gestionnaire">Gestionnaire</option>
+        <option value="coordonnateur">Coordonnateur (lecture seule)</option>
         <option value="admin">Administrateur national</option>
         <option value="superadmin">Super administrateur</option>
       </select></div>
@@ -878,7 +897,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
   <form id="advForm">
     <input type="hidden" id="advId">
     <div class="form-row">
-      <div class="field"><label>Province *</label><select id="advFProv" required></select></div>
+      <div class="field"><label>Province *</label><select id="advFProv" required onchange="refreshAdvLineSelect()"></select></div>
       <div class="field"><label>Date de l'avance (paiement) *</label><input type="date" id="advFDate" required></div>
     </div>
     <div class="form-row">
@@ -895,7 +914,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
     </div>
     <div class="form-row">
       <div class="field"><label>Ligne budgétaire</label><select id="advFLine"></select></div>
-      <div class="field"><label>Trimestre</label><select id="advFQ"><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
+      <div class="field"><label>Trimestre</label><select id="advFQ"><option>T1</option><option>T2</option><option>T3</option><option>T4</option></select></div>
     </div>
     <div class="field"><label>Description de l'activité *</label><textarea id="advFAct" rows="2" required></textarea></div>
     <div class="form-row">
@@ -927,7 +946,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
   <form id="actForm">
     <input type="hidden" id="actId">
     <div class="form-row">
-      <div class="field"><label>Province *</label><select id="actFProv" required></select></div>
+      <div class="field"><label>Province *</label><select id="actFProv" required onchange="refreshActLineSelect(this.value)"></select></div>
       <div class="field"><label>Module / Domaine</label><select id="actFModule"></select></div>
     </div>
     <div class="form-row">
@@ -940,7 +959,7 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       <div class="field"><label>Montant prévu (USD)</label><input type="number" id="actFAmt" step="0.01" placeholder="auto si ligne liée"></div>
     </div>
     <div class="form-row">
-      <div class="field"><label>Trimestre prévu</label><select id="actFQ"><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
+      <div class="field"><label>Trimestre prévu</label><select id="actFQ"><option>T1</option><option>T2</option><option>T3</option><option>T4</option></select></div>
       <div class="field"><label>Échéance prévue</label><input type="date" id="actFDue"></div>
     </div>
     <div class="form-row">
@@ -991,8 +1010,8 @@ let DB={}; let SB=null; let SB_ON=false; const SB_TABLE='app_state'; const SB_AU
 /* Connexion Supabase par défaut (intégrée pour le déploiement en ligne — la clé anon est publique).
    Peut être remplacée par chaque poste via l'écran de configuration. */
 const SB_DEFAULT={
-  url:'https://nwuxthjylzdpxixvxifx.supabase.co',
-  key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53dXh0aGp5bHpkcHhpeHZ4aWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5MzYxMDMsImV4cCI6MjA5NzUxMjEwM30.xlWpf_FwKdvASK3RE-FuK_Smboys0hJE-yuoiwg5Qlw'
+  url:'https://jtnneuttonfwrfuwghhu.supabase.co',
+  key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp0bm5ldXR0b25md3JmdXdnaGh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3MjI5NTQsImV4cCI6MjA5NjI5ODk1NH0.SVdV2izbszRZCgi6kFK2qGlXL0v7sP__sGBiWTtG9uE'
 };
 function sbConf(){const c=P(LS.getItem('cagf_sb'));if(c&&c.url&&c.key)return c;return (SB_DEFAULT.url&&SB_DEFAULT.key)?SB_DEFAULT:null;}
 function sbSetConf(url,key){LS.setItem('cagf_sb',J({url:url.trim().replace(/\/$/,''),key:key.trim()}));}
@@ -1059,16 +1078,36 @@ const DEFAULT_SETUP={
  costInputs:["1.1 Salaires - gestion du programme","2.1 Indemnités journalières liés à la formation/transports/autres coûts","2.2 Indemnités journalières liés à l'assistance technique","2.3 Indemnités journalières liés à la supervision","2.4 Indemnités journalières liés à la sensibilisation","2.5 Autres coûts de transport","2.6 Indemnités journalières liés aux enquêtes/collecte de données","3.1 Honoraires liés à l'assistance technique / Consultants","3.2 Honoraires de l'agent fiduciaire","3.3 Honoraires des auditeurs externes","3.4 Autres services professionnels externes","8.1 Mobilier","8.2 Rénovation/constructions","9.0 Équipement non sanitaire","9.1 Matériel informatique, ordinateurs, logiciel","9.2 Véhicules","10.1 Supports imprimés (formulaires, livres, directives)","11.1 Coûts liés aux bureaux","11.4 Autres coûts liés à la gestion du programme","13.1 Financement axé sur les résultats (FAR)","13.3 Incitations aux employés"],
  units:["Coût moyen par formation/participant","Coût moyen des déplacements par visite de supervision","Coût moyen des déplacements par AT par an","Coût moyen des déplacements par événement (réunion/plaidoyer)","Coût moyen des déplacements par événement (enquête/collecte de données)","Coût administratif par unité de bureau et par trimestre","Coût salarial brut moyen par ETP par an","Honoraire de consultant par personne et par jour","Coût d'un véhicule","N/A"],
  pieceTypes:["Billet d'avion","Go Pass & Taxes","Perdiem / Frais de mission","Facture","Reçu","Bordereau de versement","Carburant","Location de salle","Honoraires","Liste de présence"],
- budgetLines:[]
+ budgetLines:[], // ancien format global — conservé en repli si aucune ligne n'existe encore pour la province
+ budgetLinesByProvince:{} // { code_province: ['ligne 1','ligne 2', ...] }
 };
-function getSetup(){const s=Object.assign({},DEFAULT_SETUP,lsGet('cagf_setup',{}));if(!Array.isArray(s.pieceTypes)||!s.pieceTypes.length)s.pieceTypes=DEFAULT_SETUP.pieceTypes;if(!Array.isArray(s.budgetLines))s.budgetLines=[];return s;}
+function getSetup(){const s=Object.assign({},DEFAULT_SETUP,lsGet('cagf_setup',{}));if(!Array.isArray(s.pieceTypes)||!s.pieceTypes.length)s.pieceTypes=DEFAULT_SETUP.pieceTypes;if(!Array.isArray(s.budgetLines))s.budgetLines=[];if(!s.budgetLinesByProvince||typeof s.budgetLinesByProvince!=='object')s.budgetLinesByProvince={};return s;}
+/* Lignes budgétaires propres à UNE province ; repli sur l'ancienne liste globale si rien n'a encore été configuré pour elle */
+function getBudgetLinesFor(code){
+  const s=getSetup();
+  const arr=s.budgetLinesByProvince[code];
+  if(Array.isArray(arr)&&arr.length)return arr;
+  return (code==='national')?[]:(s.budgetLines||[]);
+}
+function setBudgetLinesFor(code,arr){
+  const s=getSetup();s.budgetLinesByProvince[code]=arr;saveSetupObj(s);return s;
+}
+/* Normalise un nom de province pour le comparer aux codes internes (accents/espaces/tirets ignorés) */
+function normProvName(str){
+  return String(str||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+function matchProvinceCode(name){
+  const n=normProvName(name);
+  const hit=PROVINCES.find(p=>p.code===n || normProvName(p.name)===n);
+  return hit?hit.code:null;
+}
 function saveSetupObj(s){lsSet('cagf_setup',s);}
 
 /* ----- users / rôles / mots de passe ----- */
 /* rôles : superadmin (tout + base de données), admin (tous menus + paramètres),
    gestionnaire (tableau de bord + avances + justifs + vue nationale, PAS de paramètres),
    province (sa province uniquement) */
-const ROLES={superadmin:'Super administrateur',admin:'Administrateur national',gestionnaire:'Gestionnaire',province:'Province'};
+const ROLES={superadmin:'Super administrateur',admin:'Administrateur national',coordonnateur:'Coordonnateur',gestionnaire:'Gestionnaire',province:'Province'};
 function defaultPass(code){return code==='national'?'national2026':code+'2026';}
 function getUsers(){
   let u=lsGet('cagf_users',null);
@@ -1081,6 +1120,7 @@ function saveUsers(u){lsSet('cagf_users',u);}
 function roleMenus(role){
   if(role==='gestionnaire')return ['dashboard','activities','advances','just','national','settings'];
   if(role==='province')return ['dashboard','advances','just','settings'];
+  if(role==='coordonnateur')return ['dashboard','advances','just','activities','national','settings']; // lecture seule, vue globale
   return null; // superadmin / admin = tous les menus (sous réserve de roleDeniedMenus)
 }
 /* Menus explicitement refusés à un rôle, même s'il n'a pas de liste restrictive (admin/superadmin) */
@@ -1100,7 +1140,10 @@ function effectiveMenus(){
 }
 function canSettings(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin');}
 function canDB(){return SESSION&&SESSION.role==='superadmin';}
-function canAllProv(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin'||SESSION.role==='gestionnaire');}
+function canAllProv(){return SESSION&&(SESSION.role==='superadmin'||SESSION.role==='admin'||SESSION.role==='gestionnaire'||SESSION.role==='coordonnateur');}
+/* Rôle strictement consultatif : aucune création/modification/suppression, même via un raccourci technique.
+   La sécurité réelle est appliquée côté base de données (RLS) ; ceci n'est qu'un confort d'interface. */
+function isReadOnly(){return SESSION&&SESSION.role==='coordonnateur';}
 
 /* ----- per-province data ----- */
 function dataKey(code){return 'cagf_pdata_'+code;}
@@ -1117,7 +1160,7 @@ function fmt(n){n=Number(n)||0;return getSetup().devise==='USD'?'$'+n.toLocaleSt
 function num(n){return (Number(n)||0).toLocaleString('en-US',{maximumFractionDigits:2});}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function dDiff(a,b){return Math.floor((new Date(b)-new Date(a))/86400000);}
-function quarterOf(dateStr){if(!dateStr)return null;const m=new Date(dateStr).getMonth();return 'Q'+(Math.floor(m/3)+1);}
+function quarterOf(dateStr){if(!dateStr)return null;const m=new Date(dateStr).getMonth();return 'T'+(Math.floor(m/3)+1);}
 function yearOf(dateStr){return dateStr?new Date(dateStr).getFullYear():null;}
 function fillSelect(el,arr,placeholder){el.innerHTML=(placeholder?`<option value="">${placeholder}</option>`:'')+arr.map(v=>`<option>${esc(v)}</option>`).join('');}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -1136,7 +1179,11 @@ function advStatus(a){
   return{key:'pending',label:'Non justifiée',cls:'b-amber',days,late:false,justified:0,remaining:rem};
 }
 /* ----- justification par pièce (formulaire avance) ----- */
-function pieceOptions(sel){return (getSetup().pieceTypes||[]).map(t=>`<option ${t===sel?'selected':''}>${esc(t)}</option>`).join('');}
+function pieceOptions(sel){
+  const types=(getSetup().pieceTypes||[]).slice();
+  if(sel&&!types.includes(sel))types.unshift(sel); // garde une pièce importée (ex. TomPro) sélectionnable même si absente de la config
+  return types.map(t=>`<option ${t===sel?'selected':''}>${esc(t)}</option>`).join('');
+}
 function advAddPiece(type,amount,file){
   const wrap=document.getElementById('advPieces');
   const row=document.createElement('div');row.className='pc-row';
@@ -1331,7 +1378,7 @@ function buildNav(){
   if(canAllProv()){
     ps.classList.remove('hidden');
     const sel=document.getElementById('provSelect');
-    sel.innerHTML=PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
+    sel.innerHTML='<option value="ALL">🌍 National — toutes les provinces</option>'+PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
     sel.value=ADMIN_SCOPE;
     sel.onchange=()=>{ADMIN_SCOPE=sel.value;renderAll();};
   }else{ps.classList.add('hidden');}
@@ -1402,11 +1449,26 @@ function populateRefSelects(){
 }
 
 /* ===================== DASHBOARD ===================== */
-let chTrim,chAdv,chN1,chN2;
+let chTrim,chAdv,chN1,chN2,chByLine;
+/* Concatène les avances de toutes les provinces réelles (chacune déjà taguée avec .province) */
+function getAllAdvances(){
+  let out=[];
+  PROVINCES.forEach(p=>{const d=getData(p.code);if(d.advances&&d.advances.length)out=out.concat(d.advances);});
+  return out;
+}
+function getAllActivities(){
+  let out=[];
+  PROVINCES.forEach(p=>{const d=getData(p.code);if(d.activities&&d.activities.length)out=out.concat(d.activities.map(a=>Object.assign({},a,{province:a.province||p.code})));});
+  return out;
+}
 function renderDashboard(){
-  const code=activeProvince(), d=getData(code), year=+document.getElementById('dashYear').value;
-  document.getElementById('dashScope').innerHTML='Province : <b>'+esc(provName(code))+'</b> · Année '+year;
-  const adv=d.advances.filter(a=>yearOf(a.date)===year);
+  const code=activeProvince(), year=+document.getElementById('dashYear').value;
+  const isAll=(code==='ALL');
+  const d=isAll?null:getData(code);
+  document.getElementById('dashScope').innerHTML=isAll
+    ? 'Vue : <b>🌍 Nationale — toutes les provinces</b> · Année '+year
+    : 'Province : <b>'+esc(provName(code))+'</b> · Année '+year;
+  const adv=(isAll?getAllAdvances():d.advances).filter(a=>yearOf(a.date)===year);
   const advTotal=adv.reduce((s,a)=>s+(+a.amount||0),0);
   const just=adv.filter(a=>advStatus(a).key==='just');
   const justAmt=just.reduce((s,a)=>s+(+a.amount||0),0);
@@ -1421,19 +1483,52 @@ function renderDashboard(){
    <div class="kpi red"><div class="lbl">En retard (&gt;${getSetup().seuil}j)</div><div class="val">${fmt(lateAmt)}</div><div class="meta">${late.length} avance(s)</div></div>`;
   // chart : avances décaissées par trimestre
   const rq=[0,0,0,0];
-  adv.forEach(a=>{const qi=(a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'Q1').slice(1))-1;if(qi>=0&&qi<4)rq[qi]+=+a.amount||0;});
-  drawBar('chartTrim',['Q1','Q2','Q3','Q4'],[{label:'Avances décaissées',data:rq,color:'#00529b'}],c=>chTrim=c,chTrim);
+  adv.forEach(a=>{const qi=(a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'T1').slice(1))-1;if(qi>=0&&qi<4)rq[qi]+=+a.amount||0;});
+  drawBar('chartTrim',['T1','T2','T3','T4'],[{label:'Avances décaissées',data:rq,color:'#00529b'}],c=>chTrim=c,chTrim);
   // donut statut
   const counts=[just.length,adv.filter(a=>advStatus(a).key==='partial').length,adv.filter(a=>advStatus(a).key==='pending').length,late.length];
   drawDonut('chartAdv',['Justifiée','Justifié partiellement','Non justifiée','En retard'],counts,['#0f9d58','#f59e0b','#f5a623','#ce1126'],c=>chAdv=c,chAdv);
   // risk table : non justifiées triées par âge desc, couleur par tranche
+  const riskProvHead=document.getElementById('dashRiskProvHead');if(riskProvHead)riskProvHead.classList.toggle('hidden',!isAll);
   const risk=adv.map(a=>({a,st:advStatus(a)})).filter(x=>x.st.key!=='just').sort((x,y)=>y.st.days-x.st.days).slice(0,12);
   document.getElementById('dashRisk').innerHTML=risk.length?risk.map(({a,st})=>{const bk=ageBucket(st.days);
-    return `<tr><td><b>${esc(a.beneficiary)}</b></td><td>${esc(a.op||'')}</td><td>${esc((a.activity||'').slice(0,40))}</td>
+    const provCell=isAll?`<td>${esc(provName(a.province||''))}</td>`:'';
+    return `<tr>${provCell}<td><b>${esc(a.beneficiary)}</b></td><td>${esc(a.op||'')}</td><td>${esc((a.activity||'').slice(0,40))}</td>
     <td class="num">${fmt(a.amount)}</td><td class="center">${a.date||''}</td><td class="center">${a.justifDate||'—'}</td>
     <td class="num"><b style="color:${bk.color}">${st.days} j</b></td>
     <td class="center"><span class="badge" style="background:${bk.color};color:#fff">${bk.statut} · ${bk.label.replace(' jours','j')}</span></td></tr>`;}).join('')
-    :'<tr><td colspan="8" class="empty">Aucune avance en attente 🎉</td></tr>';
+    :'<tr><td colspan="'+(isAll?9:8)+'" class="empty">Aucune avance en attente 🎉</td></tr>';
+  // situation par ligne budgétaire (activité)
+  function lineLabel(a){
+    if(!a.lineNo)return 'Sans ligne budgétaire';
+    if(/^\d+$/.test(String(a.lineNo))){
+      const b=budgetLineByNo(getData(a.province||code),a.lineNo);
+      if(b)return 'N°'+a.lineNo+' — '+(b.activity||'').slice(0,50);
+      return 'N°'+a.lineNo;
+    }
+    return String(a.lineNo).slice(0,60);
+  }
+  const byLine={};
+  adv.forEach(a=>{
+    const key=lineLabel(a);
+    if(!byLine[key])byLine[key]={total:0,justif:0,count:0};
+    byLine[key].total+=(+a.amount||0);
+    byLine[key].justif+=justifSum(a);
+    byLine[key].count++;
+  });
+  const lineEntries=Object.keys(byLine).map(k=>({label:k,total:byLine[k].total,justif:byLine[k].justif,
+    reste:Math.max(0,byLine[k].total-byLine[k].justif),count:byLine[k].count}))
+    .sort((a,b)=>b.total-a.total);
+  const topLines=lineEntries.slice(0,10);
+  drawBar('chartByLine',topLines.map(l=>l.label.length>28?l.label.slice(0,26)+'…':l.label),
+    [{label:'Justifié',data:topLines.map(l=>l.justif),color:'#0f9d58'},
+     {label:'Reste à justifier',data:topLines.map(l=>l.reste),color:'#ce1126'}],
+    c=>chByLine=c,chByLine,true);
+  document.getElementById('dashByLineRows').innerHTML=lineEntries.length?lineEntries.map(l=>
+    `<tr><td>${esc(l.label)}</td><td class="num">${l.count}</td><td class="num">${fmt(l.total)}</td>
+     <td class="num" style="color:#0f9d58">${fmt(l.justif)}</td>
+     <td class="num"><b style="color:${l.reste>0?'#b91c1c':'inherit'}">${fmt(l.reste)}</b></td></tr>`).join('')
+    :'<tr><td colspan="5" class="empty">Aucune avance sur la période.</td></tr>';
 }
 
 /* ===================== BUDGET DÉTAILLÉ ===================== */
@@ -1531,8 +1626,8 @@ function renderTrim(){
   document.getElementById('trimKpis').innerHTML=`
    <div class="kpi blue"><div class="lbl">Total à ventiler ${year}</div><div class="val">${fmt(tT)}</div></div>
    <div class="kpi ${Math.abs(tT-(tQ[0]+tQ[1]+tQ[2]+tQ[3]))<0.5?'green':'red'}"><div class="lbl">Écart total</div><div class="val">${fmt(tT-(tQ[0]+tQ[1]+tQ[2]+tQ[3]))}</div></div>
-   <div class="kpi"><div class="lbl">Q1 / Q2</div><div class="val" style="font-size:18px">${fmt(tQ[0])} / ${fmt(tQ[1])}</div></div>
-   <div class="kpi"><div class="lbl">Q3 / Q4</div><div class="val" style="font-size:18px">${fmt(tQ[2])} / ${fmt(tQ[3])}</div></div>`;
+   <div class="kpi"><div class="lbl">T1 / T2</div><div class="val" style="font-size:18px">${fmt(tQ[0])} / ${fmt(tQ[1])}</div></div>
+   <div class="kpi"><div class="lbl">T3 / T4</div><div class="val" style="font-size:18px">${fmt(tQ[2])} / ${fmt(tQ[3])}</div></div>`;
 }
 function trimEdit(inp){
   const tr=inp.closest('tr');const total=+tr.children[2].textContent.replace(/[^0-9.-]/g,'')||0;
@@ -1551,16 +1646,18 @@ function saveTrim(){
 }
 function lineQuarterRealized(adv){
   const map={};adv.forEach(a=>{const ln=a.lineNo;if(ln==null||ln==='')return;
-    const qi=(a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'Q1').slice(1))-1;
+    const qi=(a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'T1').slice(1))-1;
     if(!map[ln])map[ln]=[0,0,0,0];if(qi>=0&&qi<4)map[ln][qi]+=+a.amount||0;});
   return map;
 }
 
 /* ===================== AVANCES ===================== */
 function refreshAdvLineSelect(){
-  const code=activeProvince(),d=getData(code);const s=getSetup();
+  const provSel=document.getElementById('advFProv');
+  const code=(provSel&&provSel.value)?provSel.value:activeProvince();
+  const d=getData(code);
   let opts='';
-  (s.budgetLines||[]).forEach(l=>{const v=String(l);opts+=`<option value="${esc(v)}">${esc(v.slice(0,60))}</option>`;});
+  getBudgetLinesFor(code).forEach(l=>{const v=String(l);opts+=`<option value="${esc(v)}">${esc(v.slice(0,60))}</option>`;});
   (d.budget||[]).slice().sort((a,b)=>a.ln-b.ln).forEach(b=>{opts+=`<option value="${b.ln}">N°${b.ln} — ${esc((b.activity||'').slice(0,40))} (${b.year})</option>`;});
   document.getElementById('advFLine').innerHTML='<option value="">— Ligne budgétaire —</option>'+opts;
 }
@@ -1569,7 +1666,8 @@ function fillProvSelect(){
   if(canAllProv()){
     sel.disabled=false;
     sel.innerHTML=PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
-    sel.value=activeProvince();
+    const ap=activeProvince();
+    sel.value=(ap==='ALL')?PROVINCES[0].code:ap;
   }else{
     sel.disabled=true;
     sel.innerHTML=`<option value="${SESSION.code}">${esc(provName(SESSION.code))}</option>`;
@@ -1591,20 +1689,32 @@ function openAdvModal(edit){
     document.getElementById('advFBenPhone').value=a.benPhone||'';
     document.getElementById('advFBenEmail').value=a.benEmail||'';
     document.getElementById('advFLine').value=a.lineNo||'';document.getElementById('advFAct').value=a.activity||'';
-    document.getElementById('advFAmt').value=a.amount||'';document.getElementById('advFQ').value=a.quarter||quarterOf(a.date)||'Q1';
+    document.getElementById('advFAmt').value=a.amount||'';document.getElementById('advFQ').value=a.quarter||quarterOf(a.date)||'T1';
     document.getElementById('advFJDate').value=a.justifDate||'';
     document.getElementById('advFRet').value=a.returned||'';
     document.getElementById('advFCom').value=a.comment||'';document.getElementById('advModalTitle').textContent='Modifier l\'avance';
     if(Array.isArray(a.justifs)&&a.justifs.length)a.justifs.forEach(p=>advAddPiece(p.type,p.amount,p.file));
     else if(+a.justifAmount>0)advAddPiece(a.nature||undefined,+a.justifAmount);
     if(canSettings())renderEntityHistory('advance',a.id,'advHistory');
+    if(isReadOnly())document.getElementById('advModalTitle').textContent='Consulter l\'avance (lecture seule)';
   }
   advRecalc();
+  lockFormReadOnly('advForm',isReadOnly());
   document.getElementById('advModal').classList.add('on');
+}
+/* Verrouille (ou déverrouille) tous les champs et boutons d'un formulaire — utilisé pour le rôle Coordonnateur (lecture seule) */
+function lockFormReadOnly(formId,lock){
+  const form=document.getElementById(formId);if(!form)return;
+  form.querySelectorAll('input,select,textarea,button').forEach(el=>{
+    const oc=el.getAttribute('onclick')||'';
+    if(oc.includes('closeModal'))return; // le bouton de fermeture reste toujours actif
+    el.disabled=!!lock;
+  });
 }
 document.getElementById('advFAmt').addEventListener('input',advRecalc);
 document.getElementById('advForm').addEventListener('submit',function(e){
   e.preventDefault();
+  if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement, aucune modification possible.','warn');
   const targetCode=document.getElementById('advFProv').value||activeProvince();
   const id=document.getElementById('advId').value;
   const pieces=advReadPieces();const jsum=pieces.reduce((s,p)=>s+p.amount,0);
@@ -1638,7 +1748,7 @@ document.getElementById('advForm').addEventListener('submit',function(e){
   if(canAllProv()&&targetCode!==activeProvince()){ADMIN_SCOPE=targetCode;document.getElementById('provSelect').value=targetCode;}
   closeModal('advModal');renderAll();toast('Avance enregistrée','ok');
 });
-function delAdv(id){if(!confirm('Supprimer cette avance ?'))return;
+function delAdv(id){if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement.','warn');if(!confirm('Supprimer cette avance ?'))return;
   const code=activeProvince(),d=getData(code);const a=d.advances.find(x=>x.id===id);
   d.advances=d.advances.filter(a=>a.id!==id);
   saveData(code,d);logAudit('delete','advance',id,a?('Avance supprimée — '+a.beneficiary+' ('+fmt(a.amount)+')'):'Avance supprimée');
@@ -1659,10 +1769,14 @@ function unvalidateAdv(id){
 }
 function renderAdvances(){
   const code=activeProvince(),d=getData(code);
-  document.getElementById('advScope').innerHTML='Province : <b>'+esc(provName(code))+'</b> · indicateur : jours de non-justification';
+  document.getElementById('advScope').innerHTML=(code==='ALL')
+    ? '🌍 <b>Vue nationale sélectionnée</b> — choisissez une province précise ci-dessus pour voir et saisir ses avances.'
+    : 'Province : <b>'+esc(provName(code))+'</b> · indicateur : jours de non-justification';
+  var advAdd=document.getElementById('advAddBtn');if(advAdd)advAdd.style.display=isReadOnly()?'none':'';
+  var tompBtn=document.getElementById('tompImportBtn');if(tompBtn)tompBtn.style.display=isReadOnly()?'none':'';
   const term=(document.getElementById('advSearch').value||'').toLowerCase();
   let list=d.advances.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  if(term)list=list.filter(a=>(a.beneficiary+' '+a.op+' '+a.activity).toLowerCase().includes(term));
+  if(term)list=list.filter(a=>(a.beneficiary+' '+a.op+' '+a.activity+' '+(a.tompRef||'')+' '+(a.donor||'')+' '+(a.benCode||'')).toLowerCase().includes(term));
   const fstat=(document.getElementById('advFilterStatus')||{}).value||'';
   if(fstat==='tovalidate')list=list.filter(a=>!a.validated);
   else if(fstat==='validated')list=list.filter(a=>a.validated);
@@ -1722,14 +1836,17 @@ function renderAdvances(){
     <td class="num"><b style="color:${daysColor}">${st.days} j</b></td>
     <td class="center">${statusCell}</td>
     <td class="center">${valCell}</td>
-    <td class="center no-print"><div class="row-act"><button class="iconbtn" onclick="openAdvModal('${a.id}')">✏️</button>
-    <button class="iconbtn del" onclick="delAdv('${a.id}')">🗑️</button></div></td></tr>`;}).join('')
+    <td class="center no-print"><div class="row-act">${isReadOnly()
+      ? `<button class="iconbtn" onclick="openAdvModal('${a.id}')" title="Consulter (lecture seule)">👁</button>`
+      : `<button class="iconbtn" onclick="openAdvModal('${a.id}')">✏️</button>
+    <button class="iconbtn del" onclick="delAdv('${a.id}')">🗑️</button>`}</div></td></tr>`;}).join('')
     :'<tr><td colspan="13" class="empty">Aucune avance. Cliquez « ＋ Avance » ou importez un modèle Excel.</td></tr>';
 }
 
 /* ===================== JUSTIFICATIONS ===================== */
 /* Rappel par e-mail : compose un message pré-rempli avec la situation de justification */
 function sendReminder(id){
+  if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement.','warn');
   const code=activeProvince(),d=getData(code);const a=d.advances.find(x=>x.id===id);if(!a)return;
   if(!a.benEmail){
     toast('Aucun e-mail enregistré pour ce bénéficiaire. Ouvrez « Justifier » pour l\'ajouter.','warn');
@@ -1761,7 +1878,9 @@ function sendReminder(id){
 }
 function renderJust(){
   const code=activeProvince(),d=getData(code);const seuil=getSetup().seuil;
-  document.getElementById('justScope').innerHTML='Province : <b>'+esc(provName(code))+'</b> · pièces justificatives par avance';
+  document.getElementById('justScope').innerHTML=(code==='ALL')
+    ? '🌍 <b>Vue nationale sélectionnée</b> — choisissez une province précise ci-dessus pour voir ses justifications.'
+    : 'Province : <b>'+esc(provName(code))+'</b> · pièces justificatives par avance';
   const list=d.advances.filter(a=>advStatus(a).key!=='just').sort((a,b)=>advStatus(b).days-advStatus(a).days);
   const overdue=list.filter(a=>advStatus(a).days>seuil).length;
   const al=document.getElementById('justAlert');
@@ -1782,8 +1901,8 @@ function renderJust(){
     <td class="small">${pieces}</td>
     <td class="num"><b style="color:${bk.color}">${st.days} j${alert}</b></td>
     <td class="center"><span class="badge ${st.key==='partial'?'b-amber':''}" style="${st.key==='partial'?'':'background:'+bk.color+';color:#fff'}">${st.key==='partial'?'Justifié partiellement':(bk.statut+' · '+bk.label.replace(' jours','j'))}</span></td>
-    <td class="center no-print"><div class="row-act"><button class="iconbtn" onclick="openAdvModal('${a.id}')">Justifier</button>
-    <button class="iconbtn" onclick="sendReminder('${a.id}')" title="${a.benEmail?'Envoyer un rappel par e-mail':'Aucun e-mail enregistré, à ajouter dans la fiche'}">📧 Rappel</button></div></td></tr>`;}).join('')
+    <td class="center no-print"><div class="row-act"><button class="iconbtn" onclick="openAdvModal('${a.id}')">${isReadOnly()?'👁 Consulter':'Justifier'}</button>
+    ${isReadOnly()?'':`<button class="iconbtn" onclick="sendReminder('${a.id}')" title="${a.benEmail?'Envoyer un rappel par e-mail':'Aucun e-mail enregistré, à ajouter dans la fiche'}">📧 Rappel</button>`}</div></td></tr>`;}).join('')
     :'<tr><td colspan="9" class="empty">'+(list.length?'Aucun résultat pour ce filtre.':'Toutes les avances sont entièrement justifiées ✓')+'</td></tr>';
 }
 
@@ -1794,7 +1913,7 @@ function periodQuarters(p){return {Q1:[1],Q2:[2],Q3:[3],Q4:[4],S1:[1,2],S2:[3,4]
 function renderReport(){
   const code=activeProvince(),d=getData(code),year=+document.getElementById('repYear').value;
   const qs=periodQuarters(REP_PERIOD);
-  const label={Q1:'1er trimestre',Q2:'2e trimestre',Q3:'3e trimestre',Q4:'4e trimestre',S1:'1er semestre (Q1-Q2)',S2:'2e semestre (Q3-Q4)',AN:'Année entière'}[REP_PERIOD];
+  const label={Q1:'1er trimestre',Q2:'2e trimestre',Q3:'3e trimestre',Q4:'4e trimestre',S1:'1er semestre (T1-T2)',S2:'2e semestre (T3-T4)',AN:'Année entière'}[REP_PERIOD];
   document.getElementById('repTitle').textContent='Rapport '+label+' · '+year+' · '+provName(code);
   const rows=d.budget.filter(b=>+b.year===year).sort((a,b)=>a.ln-b.ln);
   const adv=d.advances.filter(a=>yearOf(a.date)===year);
@@ -1829,7 +1948,7 @@ function renderReport(){
    <div class="kpi"><div class="lbl">Activités suivies</div><div class="val">${out.length}</div></div>`;
 
   /* ----- synthèse par type de pièce (avances de la période) ----- */
-  const inQ=a=>{const q=a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'Q1').slice(1);return qs.includes(q);};
+  const inQ=a=>{const q=a.quarter?+a.quarter.slice(1):+(quarterOf(a.date)||'T1').slice(1);return qs.includes(q);};
   const periodAdv=adv.filter(inQ);
   const byType={};let totJ=0;
   periodAdv.forEach(a=>{(Array.isArray(a.justifs)?a.justifs:[]).forEach(p=>{
@@ -1941,7 +2060,10 @@ function renderActivities(){
   const year=+document.getElementById('actYear').value;
   // boutons réservés aux administrateurs
   ['actBtnBudget','actBtnPlan','actBtnTpl'].forEach(function(id){var el=document.getElementById(id);if(el)el.style.display=canSettings()?'':'none';});
-  document.getElementById('actScope').innerHTML='Province : <b>'+esc(provName(code))+'</b> · Année '+year;
+  var actAdd=document.getElementById('actAddBtn');if(actAdd)actAdd.style.display=isReadOnly()?'none':'';
+  document.getElementById('actScope').innerHTML=(code==='ALL')
+    ? '🌍 <b>Vue nationale sélectionnée</b> — choisissez une province précise ci-dessus pour voir et gérer ses activités.'
+    : 'Province : <b>'+esc(provName(code))+'</b> · Année '+year;
   const all=d.activities.filter(a=>!a.dueDate || yearOf(a.dueDate)===year);
   // KPIs
   const done=all.filter(a=>a.status==='done');
@@ -1977,8 +2099,10 @@ function renderActivities(){
       <td class="center" style="min-width:90px"><div style="background:#eef2f7;border-radius:6px;height:13px;overflow:hidden"><div style="width:${pr}%;height:100%;background:${st.color}"></div></div><span class="muted small">${pr}%</span></td>
       <td class="center"><span class="badge" style="background:${st.color};color:#fff">${st.label}</span></td>
       <td class="center">${a.critical?'<span class="badge b-red">⚠️ Oui</span>':'—'}</td>
-      <td class="center no-print"><div class="row-act"><button class="iconbtn" onclick="openActModal('${a.id}')">✏️</button>
-      <button class="iconbtn del" onclick="delAct('${a.id}')">🗑️</button></div></td></tr>`;}).join('')
+      <td class="center no-print"><div class="row-act">${isReadOnly()
+        ? `<button class="iconbtn" onclick="openActModal('${a.id}')" title="Consulter (lecture seule)">👁</button>`
+        : `<button class="iconbtn" onclick="openActModal('${a.id}')">✏️</button>
+      <button class="iconbtn del" onclick="delAct('${a.id}')">🗑️</button>`}</div></td></tr>`;}).join('')
       :'<tr><td colspan="9" class="empty">Aucune activité. Cliquez « ＋ Activité », « ⚙️ Générer un plan-type » ou importez un modèle Excel.</td></tr>';
   }
   if(ACT_VIEW==='fin'){
@@ -2043,12 +2167,13 @@ function renderActivities(){
   }
 }
 function fillActProv(){const sel=document.getElementById('actFProv');
-  if(canAllProv()){sel.disabled=false;sel.innerHTML=PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');sel.value=activeProvince();}
+  if(canAllProv()){sel.disabled=false;sel.innerHTML=PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');const ap=activeProvince();sel.value=(ap==='ALL')?PROVINCES[0].code:ap;}
   else{sel.disabled=true;sel.innerHTML=`<option value="${SESSION.code}">${esc(provName(SESSION.code))}</option>`;sel.value=SESSION.code;}}
 function refreshActLineSelect(code){
-  const d=getData(code||activeProvince());const s=getSetup();const sel=document.getElementById('actFLine');
+  const targetCode=code||activeProvince();
+  const d=getData(targetCode);const sel=document.getElementById('actFLine');
   const opts=['<option value="">— aucune (activité libre) —</option>'];
-  (s.budgetLines||[]).forEach(l=>{const v=String(l);opts.push(`<option value="${esc(v)}">${esc(v.slice(0,60))}</option>`);});
+  getBudgetLinesFor(targetCode).forEach(l=>{const v=String(l);opts.push(`<option value="${esc(v)}">${esc(v.slice(0,60))}</option>`);});
   (d.budget||[]).slice().sort((a,b)=>a.ln-b.ln).forEach(b=>opts.push(`<option value="${b.ln}">N°${b.ln} · ${esc((b.activity||'').slice(0,40))} (${fmt(b.total)})</option>`));
   sel.innerHTML=opts.join('');
 }
@@ -2071,17 +2196,20 @@ function openActModal(edit){
     document.getElementById('actFModule').value=a.module||'';document.getElementById('actFInterv').value=a.intervention||'';
     document.getElementById('actFResp').value=a.responsible||'';document.getElementById('actFAct').value=a.activity||'';
     document.getElementById('actFLine').value=a.lineNo||'';document.getElementById('actFAmt').value=a.plannedAmount||'';
-    document.getElementById('actFQ').value=a.quarter||'Q1';document.getElementById('actFDue').value=a.dueDate||'';
+    document.getElementById('actFQ').value=a.quarter||'T1';document.getElementById('actFDue').value=a.dueDate||'';
     document.getElementById('actFStatus').value=a.status||'todo';document.getElementById('actFProg').value=a.progress||0;
     document.getElementById('actFDone').value=a.doneDate||'';document.getElementById('actFCrit').checked=!!a.critical;
     document.getElementById('actFCom').value=a.comment||'';document.getElementById('actFInc').value=a.incidents||'';
     document.getElementById('actFDecision').value=a.decision||'';
     document.getElementById('actModalTitle').textContent='Modifier l\'activité';
   }
+  if(isReadOnly())document.getElementById('actModalTitle').textContent='Consulter l\'activité (lecture seule)';
+  lockFormReadOnly('actForm',isReadOnly());
   document.getElementById('actModal').classList.add('on');
 }
 document.getElementById('actForm').addEventListener('submit',function(e){
   e.preventDefault();
+  if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement, aucune modification possible.','warn');
   const targetCode=document.getElementById('actFProv').value||activeProvince();
   const id=document.getElementById('actId').value;
   let status=document.getElementById('actFStatus').value;
@@ -2104,7 +2232,7 @@ document.getElementById('actForm').addEventListener('submit',function(e){
   if(canAllProv()&&targetCode!==activeProvince()){ADMIN_SCOPE=targetCode;document.getElementById('provSelect').value=targetCode;}
   closeModal('actModal');renderAll();toast('Activité enregistrée','ok');
 });
-function delAct(id){if(!confirm('Supprimer cette activité ?'))return;const code=activeProvince(),d=getData(code);
+function delAct(id){if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement.','warn');if(!confirm('Supprimer cette activité ?'))return;const code=activeProvince(),d=getData(code);
   const a0=(d.activities||[]).find(x=>x.id===id);
   d.activities=(d.activities||[]).filter(a=>a.id!==id);saveData(code,d);
   logAudit('delete','activity',id,a0?('Activité supprimée — '+a0.activity):'Activité supprimée');
@@ -2158,10 +2286,21 @@ function renderSettings(){
   document.getElementById('setupCard').style.display=isAdmin?'block':'none';
   document.getElementById('usersCard').style.display=isAdmin?'block':'none';
   const dbCard=document.getElementById('dbCard');if(dbCard)dbCard.style.display=canDB()?'block':'none';
-  // carte « Lignes budgétaires » pour le gestionnaire (les admins l'ont déjà dans la configuration)
+  // carte « Lignes budgétaires » : gestionnaire + admin/superadmin, toujours scopée à la province active
   const gl=document.getElementById('gestLinesCard');
-  if(gl){const showGl=(SESSION.role==='gestionnaire');gl.style.display=showGl?'block':'none';
-    if(showGl)document.getElementById('setLinesGest').value=(s.budgetLines||[]).join('\n');}
+  if(gl){
+    const showGl=(SESSION.role==='gestionnaire'||isAdmin)&&activeProvince()!=='ALL';
+    gl.style.display=showGl?'block':'none';
+    if(showGl){
+      document.getElementById('setLinesGest').value=getBudgetLinesFor(activeProvince()).join('\n');
+      const pill=document.getElementById('glProvPill');if(pill)pill.textContent=provName(activeProvince());
+      const importBtn=document.getElementById('glImportBtn');
+      const help=document.getElementById('glImportHelp');
+      if(help)help.textContent=isAdmin
+        ? 'Fichier Excel à 2 colonnes (Province, Description). La province peut n\'être indiquée que sur la première ligne de chaque groupe — les lignes suivantes en héritent automatiquement. Toutes les provinces reconnues dans le fichier seront mises à jour en une fois.'
+        : 'Fichier Excel à 1 colonne (liste des activités), ou 2 colonnes (Province, Description) — seules les lignes de votre province active seront prises en compte.';
+    }
+  }
   const dataCard=document.getElementById('dataCard');if(dataCard)dataCard.style.display=canDB()?'block':'none';
   const mfaCard=document.getElementById('mfaCard');
   if(mfaCard){mfaCard.style.display=(isAdmin&&AUTH_MODE)?'block':'none';if(isAdmin&&AUTH_MODE)renderMfaCard();}
@@ -2176,9 +2315,8 @@ function renderSettings(){
     document.getElementById('setCost').value=s.costInputs.join('\n');
     document.getElementById('setUnits').value=s.units.join('\n');
     document.getElementById('setPieces').value=(s.pieceTypes||[]).join('\n');
-    document.getElementById('setLines').value=(s.budgetLines||[]).join('\n');
     document.getElementById('setShowBudget').checked=s.showBudget!==false;
-    const roleBadge={superadmin:'<span class="badge b-red">Super admin</span>',admin:'<span class="badge b-blue">Admin national</span>',gestionnaire:'<span class="badge b-amber">Gestionnaire</span>',province:'<span class="badge b-green">Province</span>'};
+    const roleBadge={superadmin:'<span class="badge b-red">Super admin</span>',admin:'<span class="badge b-blue">Admin national</span>',coordonnateur:'<span class="badge" style="background:#6d28d9;color:#fff">Coordonnateur</span>',gestionnaire:'<span class="badge b-amber">Gestionnaire</span>',province:'<span class="badge b-green">Province</span>'};
     document.getElementById('newUserScope').innerHTML=
       '<option value="national">CAGF National</option>'+
       PROVINCES.map(p=>`<option value="${p.code}">${esc(p.name)}</option>`).join('');
@@ -2235,7 +2373,7 @@ function saveSetup(){
   s.years=document.getElementById('setYears').value.split(',').map(x=>+x.trim()).filter(Boolean);
   const lines=id=>document.getElementById(id).value.split('\n').map(x=>x.trim()).filter(Boolean);
   s.modules=lines('setModules');s.interventions=lines('setInterv');s.costInputs=lines('setCost');s.units=lines('setUnits');
-  s.pieceTypes=lines('setPieces');s.budgetLines=lines('setLines');
+  s.pieceTypes=lines('setPieces');
   s.showBudget=document.getElementById('setShowBudget').checked;
   saveSetupObj(s);buildNav();populateYearSelects();populateRefSelects();toast('Configuration enregistrée','ok');
   logAudit('update','setup','cagf_setup','Configuration globale modifiée (seuil, listes, lignes budgétaires…)');
@@ -2428,10 +2566,66 @@ async function dbPushAll(silent){
 function dbDisconnect(){if(!confirm('Revenir en mode local (navigateur) ? Les données déjà enregistrées restent dans Supabase.'))return;
   sbClearConf();SB=null;SB_ON=false;loadLocalToDB();renderDbCard();renderAll();toast('Mode local réactivé','warn');}
 async function saveLinesGest(){
+  const code=activeProvince();
   const arr=document.getElementById('setLinesGest').value.split('\n').map(x=>x.trim()).filter(Boolean);
-  const s=getSetup();s.budgetLines=arr;
-  try{lsSet('cagf_setup',s);toast(arr.length+' ligne(s) budgétaire(s) enregistrée(s)','ok');logAudit('update','setup','cagf_setup','Lignes budgétaires modifiées par le gestionnaire ('+arr.length+' ligne(s))');}
-  catch(e){toast('Échec de l\'enregistrement : '+(e.message||e),'warn');}
+  try{
+    setBudgetLinesFor(code,arr);
+    toast(arr.length+' ligne(s) budgétaire(s) enregistrée(s) pour '+provName(code),'ok');
+    logAudit('update','setup','cagf_setup','Lignes budgétaires de '+provName(code)+' modifiées par '+SESSION.user+' ('+arr.length+' ligne(s))');
+  }catch(e){toast('Échec de l\'enregistrement : '+(e.message||e),'warn');}
+}
+/* ----- import des lignes budgétaires depuis un fichier Excel -----
+   Format attendu : colonne "Province" (facultative sur chaque ligne — se propage
+   vers le bas depuis la dernière valeur non vide) + colonne "Description" ou
+   "Description de l'activité..." (toute colonne texte autre que Province). */
+function importLinesGest(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length)return toast('Fichier vide ou illisible','warn');
+      const headers=Object.keys(rows[0]);
+      const provCol=headers.find(h=>/province/i.test(h));
+      const descCol=headers.find(h=>h!==provCol && String(rows.find(r=>r[h])?.[h]||'').length>0) || headers.find(h=>h!==provCol);
+      const isAdmin=canSettings();
+      const byProvince={};
+      let lastProv=null, skippedNoProv=0, unmatched=new Set();
+      rows.forEach(r=>{
+        const rawProv=(provCol?String(r[provCol]||'').trim():'');
+        if(rawProv)lastProv=rawProv;
+        const desc=String(r[descCol]||'').trim();
+        if(!desc)return;
+        if(!provCol){ // pas de colonne Province : tout va à la province active (usage gestionnaire, liste simple)
+          const code=activeProvince();
+          (byProvince[code]=byProvince[code]||[]).push(desc);
+          return;
+        }
+        if(!lastProv){skippedNoProv++;return;}
+        const code=matchProvinceCode(lastProv);
+        if(!code){unmatched.add(lastProv);return;}
+        (byProvince[code]=byProvince[code]||[]).push(desc);
+      });
+      let codes=Object.keys(byProvince);
+      if(!isAdmin){ // un gestionnaire n'importe que pour sa province active, même si le fichier en contient plusieurs
+        const active=activeProvince();
+        codes=codes.filter(c=>c===active);
+      }
+      if(!codes.length)return toast('Aucune ligne exploitable pour votre périmètre (vérifiez la colonne Province).','warn');
+      const s=getSetup();
+      codes.forEach(code=>{s.budgetLinesByProvince[code]=byProvince[code];});
+      saveSetupObj(s);
+      logAudit('update','setup','cagf_setup','Import Excel des lignes budgétaires — '+codes.map(c=>provName(c)+' ('+byProvince[c].length+')').join(', '));
+      let msg=codes.length+' province(s) mise(s) à jour : '+codes.map(c=>provName(c)).join(', ');
+      if(unmatched.size)msg+=' — non reconnues : '+[...unmatched].join(', ');
+      toast(msg,'ok');
+      renderSettings();
+    }catch(err){toast('Erreur de lecture du fichier : '+(err.message||err),'warn');}
+    input.value='';
+  };
+  reader.readAsArrayBuffer(file);
 }
 /* ----- double authentification (2FA / TOTP via Supabase Auth) ----- */
 let MFA_ENROLL_ID=null;
@@ -2546,12 +2740,12 @@ async function changeMyPass(){
 const TEMPLATES={
  budget:{sheet:'Budget Détaillé Non-HP',cols:['Année','Module','Intervention','Activité','Élément de coût','Maître d\'œuvre','Unité','Coût unitaire','Quantité','Source'],
    sample:[2026,'Gestion de programme','Gestion des subventions','Assurer les frais de fonctionnement de la DPS','11.1 Coûts liés aux bureaux','DPS','Coût administratif par unité de bureau et par trimestre',5000,4,'Approved Funding']},
- trim:{sheet:'Budget Trimestriel',cols:['N° ligne','Activité','Q1','Q2','Q3','Q4'],
+ trim:{sheet:'Budget Trimestriel',cols:['N° ligne','Activité','T1','T2','T3','T4'],
    sample:[1,'Assurer les frais de fonctionnement de la DPS',5000,5000,5000,5000]},
  advances:{sheet:'Journal des Avances',cols:['Date avance','Bénéficiaire','Structure bénéficiaire','Téléphone bénéficiaire','E-mail bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Montant rendu','Nature pièces','Commentaires'],
-   sample:['2026-06-01','Dr Jean Mukila','DPS Haut-Katanga','+243 8xx xxx xxx','jean.mukila@exemple.cd','OP 0033/2026','Appuyer les réunions de monitorage','1',9900,'Q2','','','','','']},
+   sample:['2026-06-01','Dr Jean Mukila','DPS Haut-Katanga','+243 8xx xxx xxx','jean.mukila@exemple.cd','OP 0033/2026','Appuyer les réunions de monitorage','1',9900,'T2','','','','','']},
  activities:{sheet:'Plan des Activités',cols:['N° ligne','Module','Intervention','Activité','Responsable','Montant prévu','Trimestre','Échéance','Statut','Avancement %','Date réalisation','Critique','Observations','Registre d\'incidents','Décision'],
-   sample:['122-1','Gestion de programme','Suivi & évaluation','Tenir la revue trimestrielle de performance','DPS',16935,'Q2','2026-06-30','En cours',50,'','Oui','Atelier provincial','','']}
+   sample:['122-1','Gestion de programme','Suivi & évaluation','Tenir la revue trimestrielle de performance','DPS',16935,'T2','2026-06-30','En cours',50,'','Oui','Atelier provincial','','']}
 };
 function importTemplate(type){
   const t=TEMPLATES[type];const wb=XLSX.utils.book_new();
@@ -2565,6 +2759,103 @@ function readSheet(file,cb){const r=new FileReader();r.onload=e=>{
   catch(err){toast('Erreur de lecture : '+err.message,'err');}};r.readAsArrayBuffer(file);}
 function xdate(v){if(!v)return'';if(v instanceof Date)return v.toISOString().slice(0,10);
   const d=new Date(v);return isNaN(d)?String(v):d.toISOString().slice(0,10);}
+/* ============================================================
+   IMPORT DEPUIS TOMPRO — Journal des Avances (feuille 1 du modèle)
+   La CAGF saisit déjà tout dans TomPro : cet import évite la double
+   saisie. Reconnaît les colonnes du modèle TomPro et met à jour les
+   avances déjà importées (par Référence TOMPRO) plutôt que de les
+   dupliquer à chaque nouvel export. La justification détaillée par
+   pièce reste ensuite modifiable normalement dans l'application.
+   ============================================================ */
+function importTomPro(input){
+  const file=input.files[0];if(!file)return;
+  if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement.','warn');
+  const code=activeProvince();
+  if(code==='ALL')return toast('Choisissez une province précise avant d\'importer (pas « National »).','warn');
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
+      const sheetName=wb.SheetNames.find(n=>/journal.*avance/i.test(n))||wb.SheetNames[0];
+      const ws=wb.Sheets[sheetName];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      if(!rows.length)return toast('Fichier vide ou illisible.','warn');
+      const headers=Object.keys(rows[0]);
+      const col=re=>headers.find(h=>re.test(h));
+      const cRef=col(/r[ée]f[ée]rence.*tompro/i), cPiece=col(/n[°o]?\s*pi[èe]ce/i),
+            cDate=col(/date.*paiement/i), cCode=col(/code.*b[ée]n[ée]ficiaire/i),
+            cBen=col(/^b[ée]n[ée]ficiaire$/i)||col(/b[ée]n[ée]ficiaire/i),
+            cProj=col(/projet|bailleur/i), cCompte=col(/compte/i), cMode=col(/mode.*paiement/i),
+            cObjet=col(/objet|libell[ée]/i), cMont=col(/montant.*avance/i),
+            cJust=col(/montant.*justifi|montant.*rembours/i), cDateJ=col(/date.*justification/i),
+            cStatut=col(/statut/i), cObs=col(/observation/i);
+      if(!cBen||!cMont)
+        return toast('Colonnes attendues introuvables (« Bénéficiaire », « Montant avance »…). Vérifiez que vous importez bien la feuille « Journal Avances » du modèle TomPro.','warn');
+      const d=getData(code);
+      // table de correspondance bénéficiaire → coordonnées déjà connues (saisies manuellement ou lors d'un import précédent)
+      const known={};
+      d.advances.forEach(a=>{const k=(a.benCode||a.beneficiary||'').toLowerCase();
+        if(k&&(a.benEmail||a.benPhone||a.benStructure))known[k]=known[k]||{email:a.benEmail,phone:a.benPhone,struct:a.benStructure};});
+      let created=0,updated=0,skipped=0;
+      rows.forEach(r=>{
+        const beneficiary=String(r[cBen]||'').trim();
+        const amount=+r[cMont]||0;
+        if(!beneficiary||!amount){skipped++;return;}
+        const ref=cRef?String(r[cRef]||'').trim():'';
+        const date=cDate?xdate(r[cDate]):'';
+        const justifAmt=cJust?(+r[cJust]||0):0;
+        const kk=(String(r[cCode]||'').trim()||beneficiary).toLowerCase();
+        const kn=known[kk]||{};
+        const obj={
+          province:code,
+          date:date,
+          beneficiary:beneficiary,
+          benCode:cCode?String(r[cCode]||'').trim():'',
+          benStructure:kn.struct||'',
+          benPhone:kn.phone||'',
+          benEmail:kn.email||'',
+          op:cPiece?String(r[cPiece]||'').trim():'',
+          tompRef:ref,
+          donor:cProj?String(r[cProj]||'').trim():'',
+          account:cCompte?String(r[cCompte]||'').trim():'',
+          paymentMode:cMode?String(r[cMode]||'').trim():'',
+          activity:cObjet?String(r[cObjet]||'').trim():'',
+          lineNo:cProj?String(r[cProj]||'').trim():'', // regroupement « ligne budgétaire » par projet/bailleur pour la veille stratégique
+          amount:amount,
+          quarter:quarterOf(date)||'T1',
+          justifDate:cDateJ?xdate(r[cDateJ]):'',
+          justifAmount:justifAmt,
+          justifs:justifAmt>0?[{type:'Import TomPro (montant global)',amount:justifAmt}]:[],
+          returned:0,
+          nature:justifAmt>0?'Import TomPro (montant global)':'',
+          comment:[cStatut?('Statut TomPro : '+r[cStatut]):'',cObs?r[cObs]:''].filter(Boolean).join(' — ')
+        };
+        // upsert : si une avance importée porte déjà cette référence TOMPRO, on la met à jour plutôt que de la dupliquer
+        const existing=ref?d.advances.find(a=>a.tompRef===ref):null;
+        if(existing){
+          const keepValidated={validated:existing.validated,validatedBy:existing.validatedBy,validatedAt:existing.validatedAt};
+          // conserve les coordonnées et pièces détaillées déjà complétées manuellement si présentes
+          if(existing.benEmail)obj.benEmail=existing.benEmail;
+          if(existing.benPhone)obj.benPhone=existing.benPhone;
+          if(existing.benStructure)obj.benStructure=existing.benStructure;
+          if(Array.isArray(existing.justifs)&&existing.justifs.some(p=>p.type!=='Import TomPro (montant global)'))obj.justifs=existing.justifs;
+          Object.assign(existing,obj,keepValidated);
+          updated++;
+        }else{
+          obj.id='a'+Date.now()+Math.floor(Math.random()*1e6)+created;
+          d.advances.push(obj);
+          created++;
+        }
+      });
+      saveData(code,d);
+      logAudit('import','advance','tompro','Import TomPro pour '+provName(code)+' — '+created+' créée(s), '+updated+' mise(s) à jour, '+skipped+' ignorée(s)');
+      toast(created+' avance(s) créée(s), '+updated+' mise(s) à jour'+(skipped?', '+skipped+' ligne(s) ignorée(s) (incomplètes)':'')+' — province '+provName(code),'ok');
+      renderAll();
+    }catch(err){toast('Erreur de lecture du fichier TomPro : '+(err.message||err),'warn');}
+    input.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
 function doImport(type,inp){const f=inp.files[0];if(!f)return;const code=activeProvince(),d=getData(code);
   readSheet(f,rows=>{let n=0;
     if(type==='budget'){rows.forEach(r=>{if(!r['Activité'])return;
@@ -2574,20 +2865,20 @@ function doImport(type,inp){const f=inp.files[0];if(!f)return;const code=activeP
         activity:r['Activité'],costInput:r['Élément de coût'],implementer:r['Maître d\'œuvre']||provName(code),
         unit:r['Unité'],unitCost:u,qty:q,total:u*q,source:r['Source']||'Approved Funding'});n++;});}
     else if(type==='trim'){rows.forEach(r=>{const ln=+r['N° ligne'];const b=d.budget.find(x=>+x.ln===ln);
-      if(b){d.trim[b.id]={q1:+r['Q1']||0,q2:+r['Q2']||0,q3:+r['Q3']||0,q4:+r['Q4']||0};n++;}});}
+      if(b){d.trim[b.id]={q1:+r['T1']||0,q2:+r['T2']||0,q3:+r['T3']||0,q4:+r['T4']||0};n++;}});}
     else if(type==='advances'){rows.forEach(r=>{if(!r['Bénéficiaire'])return;
       d.advances.push({id:'a'+Date.now()+Math.floor(Math.random()*1e6),province:code,
         date:xdate(r['Date avance']),beneficiary:r['Bénéficiaire'],op:r['OP'],
         benStructure:r['Structure bénéficiaire']||'',benPhone:r['Téléphone bénéficiaire']||'',benEmail:r['E-mail bénéficiaire']||'',
         activity:r['Activité'],
         lineNo:r['Ligne budgétaire']!==''?String(r['Ligne budgétaire']):'',amount:+r['Montant']||0,
-        quarter:r['Trimestre']||quarterOf(xdate(r['Date avance']))||'Q1',justifDate:xdate(r['Date justif']),
+        quarter:r['Trimestre']||quarterOf(xdate(r['Date avance']))||'T1',justifDate:xdate(r['Date justif']),
         justifAmount:+r['Montant justifié']||0,returned:+r['Montant rendu']||0,nature:r['Nature pièces'],comment:r['Commentaires']});n++;});}
     else if(type==='activities'){d.activities=d.activities||[];rows.forEach(r=>{if(!r['Activité'])return;
       d.activities.push({id:'k'+Date.now()+Math.floor(Math.random()*1e6),province:code,
         lineNo:r['N° ligne']!==undefined&&r['N° ligne']!==''?String(r['N° ligne']):'',
         module:r['Module']||'',intervention:r['Intervention']||'',activity:r['Activité'],responsible:r['Responsable']||provName(code),
-        plannedAmount:+r['Montant prévu']||0,quarter:r['Trimestre']||'Q1',dueDate:xdate(r['Échéance']),status:frStatus(r['Statut']),
+        plannedAmount:+r['Montant prévu']||0,quarter:r['Trimestre']||'T1',dueDate:xdate(r['Échéance']),status:frStatus(r['Statut']),
         progress:+r['Avancement %']||0,doneDate:xdate(r['Date réalisation']),
         critical:/^(oui|o|yes|x|1|vrai|true)$/i.test(String(r['Critique']||'').trim()),
         comment:r['Observations']||r['Commentaire']||'',incidents:r['Registre d\'incidents']||'',decision:r['Décision']||''});n++;});}
@@ -2600,15 +2891,15 @@ function exportSheet(type){const code=activeProvince(),d=getData(code);let aoa,n
     d.budget.filter(b=>+b.year===y).sort((a,b)=>a.ln-b.ln).forEach(b=>aoa.push([b.ln,b.year,b.module,b.intervention,b.activity,b.costInput,b.implementer,b.unit,b.unitCost,b.qty,b.total,b.source]));
     name='BudgetDetaille_'+y;}
   else if(type==='trim'){const y=+document.getElementById('trimYear').value;
-    aoa=[['N°','Activité','Total annuel','Q1','Q2','Q3','Q4','Écart']];
+    aoa=[['N°','Activité','Total annuel','T1','T2','T3','T4','Écart']];
     d.budget.filter(b=>+b.year===y).sort((a,b)=>a.ln-b.ln).forEach(b=>{const al=d.trim[b.id]||{};
       const s=(+al.q1||0)+(+al.q2||0)+(+al.q3||0)+(+al.q4||0);
       aoa.push([b.ln,b.activity,b.total,+al.q1||0,+al.q2||0,+al.q3||0,+al.q4||0,(b.total||0)-s]);});
     name='BudgetTrimestriel_'+y;}
-  else if(type==='advances'){aoa=[['Date avance','Bénéficiaire','Structure bénéficiaire','Téléphone bénéficiaire','E-mail bénéficiaire','OP','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Reste à justifier','Montant rendu','Jours non justif.','Statut','Détail pièces','Commentaires']];
+  else if(type==='advances'){aoa=[['Réf. TomPro','Date avance','Bénéficiaire','Code bénéficiaire','Structure bénéficiaire','Téléphone bénéficiaire','E-mail bénéficiaire','OP','Bailleur/Projet','Activité','Ligne budgétaire','Montant','Trimestre','Date justif','Montant justifié','Reste à justifier','Montant rendu','Jours non justif.','Statut','Détail pièces','Commentaires']];
     d.advances.forEach(a=>{const st=advStatus(a);const js=justifSum(a);const rem=advRemaining(a);
       const det=(Array.isArray(a.justifs)&&a.justifs.length)?a.justifs.map(p=>p.type+'='+p.amount).join(' ; '):(a.nature||'');
-      aoa.push([a.date,a.beneficiary,a.benStructure||'',a.benPhone||'',a.benEmail||'',a.op,a.activity,a.lineNo,a.amount,a.quarter,a.justifDate,js,rem,a.returned,st.days,st.label,det,a.comment]);});
+      aoa.push([a.tompRef||'',a.date,a.beneficiary,a.benCode||'',a.benStructure||'',a.benPhone||'',a.benEmail||'',a.op,a.donor||'',a.activity,a.lineNo,a.amount,a.quarter,a.justifDate,js,rem,a.returned,st.days,st.label,det,a.comment]);});
     name='JournalAvances';}
   else{const acts=d.activities||[];
     aoa=[['N° ligne','Module','Intervention','Activité','Responsable','Montant prévu','Plan T1','Plan T2','Plan T3','Plan T4','Consommé (avances)','Disponible','% réalisation fin.','Trimestre','Échéance','Statut','Avancement %','Date réalisation','Critique','Observations','Registre d\'incidents','Décision']];
@@ -2632,10 +2923,31 @@ function exportReport(){const code=activeProvince(),y=+document.getElementById('
   XLSX.writeFile(wb,'Rapport_'+REP_PERIOD+'_'+y+'_'+provName(code).replace(/\W+/g,'_')+'.xlsx');
   toast('Rapport Excel généré (3 feuilles)','ok');}
 function exportNational(){const y=+document.getElementById('natYear').value;
+  const stats=PROVINCES.map(p=>provinceStats(p.code,y)).filter(s=>s.count>0||s.budget>0);
+  stats.sort((a,b)=>b.nonJustAmt-a.nonJustAmt);
+  const totAdv=stats.reduce((s,x)=>s+x.total,0);
+  const totNon=stats.reduce((s,x)=>s+x.nonJustAmt,0);
+  const totBud=stats.reduce((s,x)=>s+x.budget,0);
+  const bad=stats.filter(s=>s.suivi.lbl==='Mauvais').length;
+  const wb=XLSX.utils.book_new();
+  const summary=[
+    ['Vue Nationale — Synthèse',y],
+    ['Généré le',new Date().toLocaleString('fr-FR')],
+    [],
+    ['Indicateur','Valeur'],
+    ['Budget national',totBud],
+    ['Total avances',totAdv],
+    ['Non justifié national',totNon],
+    ['Provinces actives',stats.length],
+    ['Provinces à risque (suivi « Mauvais »)',bad],
+  ];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(summary),'Synthèse');
   const aoa=[['#','Province','Total avances','Nb','Non justifié','% justifié','Délai moyen (j)','En retard','Suivi']];
-  document.querySelectorAll('#natRows tr').forEach(tr=>{if(tr.querySelector('.empty'))return;
-    aoa.push([...tr.children].map(td=>td.textContent.trim()));});
-  dl(aoa,'VueNationale_'+y);}
+  stats.forEach((s,i)=>aoa.push([i+1,s.name,s.total,s.count,s.nonJustAmt,s.pctJust+'%',s.avg,s.late,s.suivi.lbl]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Classement par province');
+  XLSX.writeFile(wb,'VueNationale_'+y+'.xlsx');
+  toast('Export Excel généré (2 feuilles)','ok');
+}
 function exportCredentials(){const u=getUsers();
   const aoa=[['Nom / Entité','Identifiant','Mot de passe','Rôle']];
   Object.keys(u).forEach(login=>{const x=u[login];const rl=x.role||(x.isAdmin?'superadmin':'province');

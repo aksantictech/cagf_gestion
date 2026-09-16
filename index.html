@@ -491,7 +491,31 @@ table.tbl tfoot td{font-weight:800;background:#f3f6fa;border-top:2px solid var(-
       </div>
     </div>
 
-    <!-- ACTIVITÉS (PROGRAMMATIQUE) -->
+    <!-- MOUVEMENTS TOMPRO (détail brut importé, façon Excel) -->
+    <div id="page-movements" class="page hidden">
+      <div class="page-head">
+        <div><h2>Mouvements TomPro</h2><div class="scope" id="movScope"></div></div>
+        <div class="toolbar">
+          <button class="btn sm ghost" onclick="exportMovements()">⬇️ Exporter</button>
+          <button class="btn sm ghost" onclick="window.print()">🖨️ Imprimer</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Détail des mouvements importés <span class="pill" id="movCount"></span></h3>
+        <div class="scope" style="margin-bottom:10px">Vue fidèle au journal TomPro (une ligne par écriture comptable), pour retrouver rapidement une pièce sans rouvrir Excel. Les avances correspondantes sont automatiquement disponibles dans le menu « Avances ».</div>
+        <div style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap">
+          <input type="text" id="movSearch" style="flex:1;min-width:220px" placeholder="🔎 Rechercher (N° pièce, compte, libellé, réf. OP)…" oninput="renderMovements()">
+          <select id="movFilterSite" style="width:auto" onchange="renderMovements()"><option value="">Tous les sites</option></select>
+          <select id="movFilterJournal" style="width:auto" onchange="renderMovements()"><option value="">Tous les journaux</option></select>
+        </div>
+        <div class="tbl-scroll"><table class="tbl"><thead><tr>
+          <th class="center">Date</th><th>N° pièce</th><th class="center">Site</th><th>Compte</th><th>Libellé</th>
+          <th class="num">Débit</th><th class="num">Crédit</th><th class="center">Journal</th>
+          <th class="center">Interv.</th><th>Réf. OP</th></tr></thead>
+          <tbody id="movRows"></tbody></table></div>
+      </div>
+    </div>
+
     <div id="page-activities" class="page hidden">
       <div class="page-head">
         <div><h2>Plan &amp; Suivi des Activités</h2><div class="scope" id="actScope"></div></div>
@@ -1118,9 +1142,9 @@ function getUsers(){
 function saveUsers(u){lsSet('cagf_users',u);}
 /* droits par rôle */
 function roleMenus(role){
-  if(role==='gestionnaire')return ['dashboard','activities','advances','just','national','settings'];
-  if(role==='province')return ['dashboard','advances','just','settings'];
-  if(role==='coordonnateur')return ['dashboard','advances','just','activities','national','settings']; // lecture seule, vue globale
+  if(role==='gestionnaire')return ['dashboard','activities','advances','just','movements','national','settings'];
+  if(role==='province')return ['dashboard','advances','just','movements','settings'];
+  if(role==='coordonnateur')return ['dashboard','advances','just','movements','activities','national','settings']; // lecture seule, vue globale
   return null; // superadmin / admin = tous les menus (sous réserve de roleDeniedMenus)
 }
 /* Menus explicitement refusés à un rôle, même s'il n'a pas de liste restrictive (admin/superadmin) */
@@ -1147,7 +1171,7 @@ function isReadOnly(){return SESSION&&SESSION.role==='coordonnateur';}
 
 /* ----- per-province data ----- */
 function dataKey(code){return 'cagf_pdata_'+code;}
-function getData(code){return lsGet(dataKey(code),{advances:[],budget:[],trim:{},activities:[]});}
+function getData(code){const d=lsGet(dataKey(code),{advances:[],budget:[],trim:{},activities:[]});if(!Array.isArray(d.tompMovements))d.tompMovements=[];return d;}
 function saveData(code,d){lsSet(dataKey(code),d);}
 
 /* ===================== SESSION / SCOPE ===================== */
@@ -1364,6 +1388,7 @@ const MENUS=[
  ['trim','📆 Budget Trimestriel'],
  ['advances','💰 Avances'],
  ['just','✓ Justifications'],
+ ['movements','🧾 Mouvements TomPro'],
  ['activities','🗂️ Plan & Suivi Activités'],
  ['reports','📈 Rapports'],
  ['national','🌍 Vue Nationale'],
@@ -1424,7 +1449,7 @@ function switchPage(id){
 }
 function renderCurrent(){
   ({dashboard:renderDashboard,budget:renderBudget,trim:renderTrim,advances:renderAdvances,
-    just:renderJust,activities:renderActivities,reports:renderReport,national:renderNational,settings:renderSettings}[CURRENT]||(()=>{}))();
+    just:renderJust,movements:renderMovements,activities:renderActivities,reports:renderReport,national:renderNational,settings:renderSettings}[CURRENT]||(()=>{}))();
 }
 function renderAll(){populateYearSelects(true);renderCurrent();}
 
@@ -2760,13 +2785,39 @@ function readSheet(file,cb){const r=new FileReader();r.onload=e=>{
 function xdate(v){if(!v)return'';if(v instanceof Date)return v.toISOString().slice(0,10);
   const d=new Date(v);return isNaN(d)?String(v):d.toISOString().slice(0,10);}
 /* ============================================================
-   IMPORT DEPUIS TOMPRO — Journal des Avances (feuille 1 du modèle)
-   La CAGF saisit déjà tout dans TomPro : cet import évite la double
-   saisie. Reconnaît les colonnes du modèle TomPro et met à jour les
-   avances déjà importées (par Référence TOMPRO) plutôt que de les
-   dupliquer à chaque nouvel export. La justification détaillée par
-   pièce reste ensuite modifiable normalement dans l'application.
+   IMPORT DEPUIS TOMPRO — deux formats reconnus automatiquement :
+   (A) « Journal Avances » — export déjà agrégé par avance (modèle CAGF)
+   (B) « Mouvements » — export brut de la comptabilité (une écriture
+       Débit + une écriture Crédit par paiement, groupées par pièce)
+   Dans les deux cas : la CAGF saisit déjà tout dans TomPro, cet import
+   évite la double saisie, associe chaque avance à sa référence TomPro
+   pour éviter les doublons lors des réimports, et laisse la
+   justification détaillée par pièce modifiable normalement ensuite.
    ============================================================ */
+function tompKnownContacts(d){
+  const known={};
+  d.advances.forEach(a=>{const k=(a.benCode||a.beneficiary||'').toLowerCase();
+    if(k&&(a.benEmail||a.benPhone||a.benStructure))known[k]=known[k]||{email:a.benEmail,phone:a.benPhone,struct:a.benStructure};});
+  return known;
+}
+/* Enregistre (ou met à jour) une avance importée, sans dupliquer si la référence TomPro est déjà connue */
+function tompUpsertAdvance(d,obj,counters){
+  const ref=obj.tompRef;
+  const existing=ref?d.advances.find(a=>a.tompRef===ref):null;
+  if(existing){
+    const keepValidated={validated:existing.validated,validatedBy:existing.validatedBy,validatedAt:existing.validatedAt};
+    if(existing.benEmail)obj.benEmail=existing.benEmail;
+    if(existing.benPhone)obj.benPhone=existing.benPhone;
+    if(existing.benStructure)obj.benStructure=existing.benStructure;
+    if(Array.isArray(existing.justifs)&&existing.justifs.some(p=>!/^Import TomPro/.test(p.type)))obj.justifs=existing.justifs;
+    Object.assign(existing,obj,keepValidated);
+    counters.updated++;
+  }else{
+    obj.id='a'+Date.now()+Math.floor(Math.random()*1e6)+counters.created;
+    d.advances.push(obj);
+    counters.created++;
+  }
+}
 function importTomPro(input){
   const file=input.files[0];if(!file)return;
   if(isReadOnly())return toast('Compte Coordonnateur : consultation uniquement.','warn');
@@ -2776,85 +2827,206 @@ function importTomPro(input){
   reader.onload=function(e){
     try{
       const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
-      const sheetName=wb.SheetNames.find(n=>/journal.*avance/i.test(n))||wb.SheetNames[0];
+      const sheetJournal=wb.SheetNames.find(n=>/journal.*avance/i.test(n));
+      const sheetName=sheetJournal||wb.SheetNames[0];
       const ws=wb.Sheets[sheetName];
-      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      if(!rows.length)return toast('Fichier vide ou illisible.','warn');
-      const headers=Object.keys(rows[0]);
-      const col=re=>headers.find(h=>re.test(h));
-      const cRef=col(/r[ée]f[ée]rence.*tompro/i), cPiece=col(/n[°o]?\s*pi[èe]ce/i),
-            cDate=col(/date.*paiement/i), cCode=col(/code.*b[ée]n[ée]ficiaire/i),
-            cBen=col(/^b[ée]n[ée]ficiaire$/i)||col(/b[ée]n[ée]ficiaire/i),
-            cProj=col(/projet|bailleur/i), cCompte=col(/compte/i), cMode=col(/mode.*paiement/i),
-            cObjet=col(/objet|libell[ée]/i), cMont=col(/montant.*avance/i),
-            cJust=col(/montant.*justifi|montant.*rembours/i), cDateJ=col(/date.*justification/i),
-            cStatut=col(/statut/i), cObs=col(/observation/i);
-      if(!cBen||!cMont)
-        return toast('Colonnes attendues introuvables (« Bénéficiaire », « Montant avance »…). Vérifiez que vous importez bien la feuille « Journal Avances » du modèle TomPro.','warn');
-      const d=getData(code);
-      // table de correspondance bénéficiaire → coordonnées déjà connues (saisies manuellement ou lors d'un import précédent)
-      const known={};
-      d.advances.forEach(a=>{const k=(a.benCode||a.beneficiary||'').toLowerCase();
-        if(k&&(a.benEmail||a.benPhone||a.benStructure))known[k]=known[k]||{email:a.benEmail,phone:a.benPhone,struct:a.benStructure};});
-      let created=0,updated=0,skipped=0;
-      rows.forEach(r=>{
-        const beneficiary=String(r[cBen]||'').trim();
-        const amount=+r[cMont]||0;
-        if(!beneficiary||!amount){skipped++;return;}
-        const ref=cRef?String(r[cRef]||'').trim():'';
-        const date=cDate?xdate(r[cDate]):'';
-        const justifAmt=cJust?(+r[cJust]||0):0;
-        const kk=(String(r[cCode]||'').trim()||beneficiary).toLowerCase();
-        const kn=known[kk]||{};
-        const obj={
-          province:code,
-          date:date,
-          beneficiary:beneficiary,
-          benCode:cCode?String(r[cCode]||'').trim():'',
-          benStructure:kn.struct||'',
-          benPhone:kn.phone||'',
-          benEmail:kn.email||'',
-          op:cPiece?String(r[cPiece]||'').trim():'',
-          tompRef:ref,
-          donor:cProj?String(r[cProj]||'').trim():'',
-          account:cCompte?String(r[cCompte]||'').trim():'',
-          paymentMode:cMode?String(r[cMode]||'').trim():'',
-          activity:cObjet?String(r[cObjet]||'').trim():'',
-          lineNo:cProj?String(r[cProj]||'').trim():'', // regroupement « ligne budgétaire » par projet/bailleur pour la veille stratégique
-          amount:amount,
-          quarter:quarterOf(date)||'T1',
-          justifDate:cDateJ?xdate(r[cDateJ]):'',
-          justifAmount:justifAmt,
-          justifs:justifAmt>0?[{type:'Import TomPro (montant global)',amount:justifAmt}]:[],
-          returned:0,
-          nature:justifAmt>0?'Import TomPro (montant global)':'',
-          comment:[cStatut?('Statut TomPro : '+r[cStatut]):'',cObs?r[cObs]:''].filter(Boolean).join(' — ')
-        };
-        // upsert : si une avance importée porte déjà cette référence TOMPRO, on la met à jour plutôt que de la dupliquer
-        const existing=ref?d.advances.find(a=>a.tompRef===ref):null;
-        if(existing){
-          const keepValidated={validated:existing.validated,validatedBy:existing.validatedBy,validatedAt:existing.validatedAt};
-          // conserve les coordonnées et pièces détaillées déjà complétées manuellement si présentes
-          if(existing.benEmail)obj.benEmail=existing.benEmail;
-          if(existing.benPhone)obj.benPhone=existing.benPhone;
-          if(existing.benStructure)obj.benStructure=existing.benStructure;
-          if(Array.isArray(existing.justifs)&&existing.justifs.some(p=>p.type!=='Import TomPro (montant global)'))obj.justifs=existing.justifs;
-          Object.assign(existing,obj,keepValidated);
-          updated++;
-        }else{
-          obj.id='a'+Date.now()+Math.floor(Math.random()*1e6)+created;
-          d.advances.push(obj);
-          created++;
-        }
-      });
-      saveData(code,d);
-      logAudit('import','advance','tompro','Import TomPro pour '+provName(code)+' — '+created+' créée(s), '+updated+' mise(s) à jour, '+skipped+' ignorée(s)');
-      toast(created+' avance(s) créée(s), '+updated+' mise(s) à jour'+(skipped?', '+skipped+' ligne(s) ignorée(s) (incomplètes)':'')+' — province '+provName(code),'ok');
-      renderAll();
+      const headerRow=XLSX.utils.sheet_to_json(ws,{header:1,range:0})[0]||[];
+      const headers=headerRow.map(h=>String(h||''));
+      const has=re=>headers.some(h=>re.test(h));
+      // format (B) « Mouvements » : présence de Débit + Crédit + N° pièce = export comptable brut
+      if(has(/^d[ée]bit$/i)&&has(/^cr[ée]dit$/i)&&has(/n[°o]?\s*pi[èe]ce/i)){
+        importTomProMouvements(ws,code);
+      // format (A) « Journal Avances » : présence de Bénéficiaire + Montant avance
+      }else if(has(/b[ée]n[ée]ficiaire/i)&&has(/montant.*avance/i)){
+        importTomProJournal(XLSX.utils.sheet_to_json(ws,{defval:''}),code);
+      }else{
+        toast('Format non reconnu. Colonnes attendues : soit « Bénéficiaire »/« Montant avance » (Journal Avances), soit « N° pièce »/« Débit »/« Crédit » (export Mouvements).','warn');
+      }
     }catch(err){toast('Erreur de lecture du fichier TomPro : '+(err.message||err),'warn');}
     input.value='';
   };
   reader.readAsArrayBuffer(file);
+}
+/* ----- Format (A) : Journal Avances (déjà agrégé par avance) ----- */
+function importTomProJournal(rows,code){
+  if(!rows.length)return toast('Fichier vide ou illisible.','warn');
+  const headers=Object.keys(rows[0]);
+  const col=re=>headers.find(h=>re.test(h));
+  const cRef=col(/r[ée]f[ée]rence.*tompro/i), cPiece=col(/n[°o]?\s*pi[èe]ce/i),
+        cDate=col(/date.*paiement/i), cCode=col(/code.*b[ée]n[ée]ficiaire/i),
+        cBen=col(/^b[ée]n[ée]ficiaire$/i)||col(/b[ée]n[ée]ficiaire/i),
+        cProj=col(/projet|bailleur/i), cCompte=col(/compte/i), cMode=col(/mode.*paiement/i),
+        cObjet=col(/objet|libell[ée]/i), cMont=col(/montant.*avance/i),
+        cJust=col(/montant.*justifi|montant.*rembours/i), cDateJ=col(/date.*justification/i),
+        cStatut=col(/statut/i), cObs=col(/observation/i);
+  if(!cBen||!cMont)
+    return toast('Colonnes attendues introuvables (« Bénéficiaire », « Montant avance »…). Vérifiez que vous importez bien la feuille « Journal Avances » du modèle TomPro.','warn');
+  const d=getData(code);
+  const known=tompKnownContacts(d);
+  const counters={created:0,updated:0};let skipped=0;
+  rows.forEach(r=>{
+    const beneficiary=String(r[cBen]||'').trim();
+    const amount=+r[cMont]||0;
+    if(!beneficiary||!amount){skipped++;return;}
+    const ref=cRef?String(r[cRef]||'').trim():'';
+    const date=cDate?xdate(r[cDate]):'';
+    const justifAmt=cJust?(+r[cJust]||0):0;
+    const kk=(String(r[cCode]||'').trim()||beneficiary).toLowerCase();
+    const kn=known[kk]||{};
+    tompUpsertAdvance(d,{
+      province:code,date,beneficiary,
+      benCode:cCode?String(r[cCode]||'').trim():'',
+      benStructure:kn.struct||'',benPhone:kn.phone||'',benEmail:kn.email||'',
+      op:cPiece?String(r[cPiece]||'').trim():'',tompRef:ref,
+      donor:cProj?String(r[cProj]||'').trim():'',account:cCompte?String(r[cCompte]||'').trim():'',
+      paymentMode:cMode?String(r[cMode]||'').trim():'',activity:cObjet?String(r[cObjet]||'').trim():'',
+      lineNo:cProj?String(r[cProj]||'').trim():'',
+      amount,quarter:quarterOf(date)||'T1',justifDate:cDateJ?xdate(r[cDateJ]):'',
+      justifAmount:justifAmt,justifs:justifAmt>0?[{type:'Import TomPro (montant global)',amount:justifAmt}]:[],
+      returned:0,nature:justifAmt>0?'Import TomPro (montant global)':'',
+      comment:[cStatut?('Statut TomPro : '+r[cStatut]):'',cObs?r[cObs]:''].filter(Boolean).join(' — ')
+    },counters);
+  });
+  saveData(code,d);
+  logAudit('import','advance','tompro','Import TomPro (Journal Avances) pour '+provName(code)+' — '+counters.created+' créée(s), '+counters.updated+' mise(s) à jour, '+skipped+' ignorée(s)');
+  toast(counters.created+' avance(s) créée(s), '+counters.updated+' mise(s) à jour'+(skipped?', '+skipped+' ligne(s) ignorée(s) (incomplètes)':'')+' — province '+provName(code),'ok');
+  renderAll();
+}
+/* ----- Format (B) : export brut « Mouvements » (comptabilité, écritures en partie double) -----
+   Chaque paiement = 2 lignes partageant le même N° pièce : une écriture au débit d'un
+   compte bénéficiaire (tiers), une écriture au crédit du compte banque/caisse. Les lignes
+   sont regroupées sous des en-têtes "Date - N° Ordre: JJ/MM/AAAA - NNNNNN". */
+function tompExtractLibelle(lib){
+  lib=String(lib||'').trim();
+  let purpose=lib, beneficiary='', mode='';
+  const mOp=lib.match(/^OP\s*[\d/]+\s*/i);
+  const rest=mOp?lib.slice(mOp[0].length):lib;
+  const mChq=rest.match(/^(CHQ\s*\d+)\s+/i);
+  if(mChq){
+    mode='Chèque '+mChq[1].replace(/^CHQ\s*/i,'');
+    const tail=rest.slice(mChq[0].length);
+    const us=tail.indexOf('_');
+    beneficiary=(us>=0?tail.slice(0,us):tail).trim();
+    purpose=(us>=0?tail.slice(us+1):'').replace(/_/g,' ').trim();
+  }else{
+    const mPyt=rest.match(/^(.*?)\s+Pyt\s+(.*)$/i);
+    if(mPyt){beneficiary=mPyt[1].trim();purpose=mPyt[2].replace(/_/g,' ').trim();}
+    else{
+      const us=rest.indexOf('_');
+      if(us>=0){beneficiary=rest.slice(0,us).trim();purpose=rest.slice(us+1).replace(/_/g,' ').trim();}
+      else{beneficiary=rest.trim();purpose='';}
+    }
+  }
+  return {beneficiary,purpose,mode};
+}
+function importTomProMouvements(ws,code){
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  if(rows.length<2)return toast('Fichier vide ou illisible.','warn');
+  const headers=rows[0].map(h=>String(h||''));
+  const idx=name=>headers.findIndex(h=>h.trim()===name);
+  const iPiece=idx('N° pièce'),iSite=idx('Site'),iCompte=idx('Compte'),iLib=idx('Libellé'),
+        iDebit=idx('Débit'),iCredit=idx('Crédit'),iDevise=idx('Monnaie'),
+        iActiv=idx('ACTIVITES'),iCost=idx('Cost_imput'),iFinCat=idx('Financement Catégorie'),
+        iInterv=idx('Interv.'),iRefOp=idx('REF OP'),iJournal=idx('Journal'),iReleve=idx('Relevé');
+  if(iPiece<0||iDebit<0||iCredit<0)
+    return toast('Colonnes attendues introuvables (« N° pièce », « Débit », « Crédit »…) dans cet export Mouvements.','warn');
+  let curDate='';
+  const movLines=[];
+  const pieces={};
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i];
+    const c0=String(r[0]||'').trim();
+    const mHead=c0.match(/^Date\s*-\s*N[°o]\s*Ordre\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+    if(mHead){curDate=mHead[3]+'-'+mHead[2]+'-'+mHead[1];continue;}
+    if(/^Total/i.test(String(r[iLib]||''))||!c0)continue;
+    const line={
+      date:curDate,piece:String(r[iPiece]||'').trim(),site:iSite>=0?String(r[iSite]||'').trim():'',
+      compte:iCompte>=0?String(r[iCompte]||'').trim():'',libelle:iLib>=0?String(r[iLib]||'').trim():'',
+      debit:+r[iDebit]||0,credit:+r[iCredit]||0,devise:iDevise>=0?String(r[iDevise]||'').trim():'',
+      activites:iActiv>=0?String(r[iActiv]||'').trim():'',costImput:iCost>=0?String(r[iCost]||'').trim():'',
+      financeCat:iFinCat>=0?String(r[iFinCat]||'').trim():'',interv:iInterv>=0?String(r[iInterv]||'').trim():'',
+      refOp:iRefOp>=0?String(r[iRefOp]||'').trim():'',journal:iJournal>=0?String(r[iJournal]||'').trim():'',
+      releve:iReleve>=0?String(r[iReleve]||'').trim():''
+    };
+    movLines.push(line);
+    if(!pieces[line.piece])pieces[line.piece]={};
+    if(line.debit)pieces[line.piece].debit=line;
+    if(line.credit)pieces[line.piece].credit=line;
+  }
+  if(!movLines.length)return toast('Aucune ligne de mouvement reconnue dans ce fichier.','warn');
+  const d=getData(code);
+  // conserve le détail brut, façon Excel, pour la page « Mouvements TomPro »
+  const existingPieces=new Set(d.tompMovements.map(m=>m.piece+'|'+m.compte+'|'+m.debit+'|'+m.credit));
+  let movAdded=0;
+  movLines.forEach(l=>{const key=l.piece+'|'+l.compte+'|'+l.debit+'|'+l.credit;
+    if(!existingPieces.has(key)){d.tompMovements.push(l);existingPieces.add(key);movAdded++;}});
+  // dérive une avance par pièce, à partir de l'écriture au débit d'un compte bénéficiaire (hors trésorerie/banque, classe 5)
+  const known=tompKnownContacts(d);
+  const counters={created:0,updated:0};let skipped=0;
+  Object.keys(pieces).forEach(pieceNo=>{
+    const deb=pieces[pieceNo].debit;
+    if(!deb||!deb.debit){skipped++;return;}
+    const compteCode=(deb.compte.split(' - ')[0]||'').trim();
+    if(compteCode.startsWith('5')){skipped++;return;} // compte de trésorerie/banque : pas un bénéficiaire
+    const {beneficiary,purpose,mode}=tompExtractLibelle(deb.libelle);
+    const benName=beneficiary||deb.compte.split(' - ')[1]||deb.compte;
+    const kk=(deb.compte.split(' - ')[1]||benName||'').toLowerCase();
+    const kn=known[kk]||{};
+    tompUpsertAdvance(d,{
+      province:code,date:deb.date,beneficiary:benName,
+      benCode:deb.compte.split(' - ')[1]||'',
+      benStructure:kn.struct||'',benPhone:kn.phone||'',benEmail:kn.email||'',
+      op:deb.refOp||'',tompRef:pieceNo,
+      donor:deb.interv||'',account:deb.compte,paymentMode:mode,
+      activity:purpose||deb.libelle,
+      lineNo:deb.interv||(deb.activites&&deb.costImput?(deb.activites+'-'+deb.costImput):''),
+      amount:deb.debit,quarter:quarterOf(deb.date)||'T1',
+      justifDate:'',justifAmount:0,justifs:[],returned:0,nature:'',
+      comment:'Import TomPro (mouvements) — Journal '+(deb.journal||'')+(deb.financeCat?(' · Catégorie '+deb.financeCat):'')
+    },counters);
+  });
+  saveData(code,d);
+  logAudit('import','advance','tompro','Import TomPro (Mouvements) pour '+provName(code)+' — '+counters.created+' créée(s), '+counters.updated+' mise(s) à jour, '+movAdded+' ligne(s) de détail, '+skipped+' pièce(s) ignorée(s)');
+  toast(counters.created+' avance(s) créée(s), '+counters.updated+' mise(s) à jour, '+movAdded+' ligne(s) ajoutée(s) au détail des mouvements — province '+provName(code),'ok');
+  renderAll();
+}
+/* ----- Page « Mouvements TomPro » : détail brut, filtrable, façon Excel ----- */
+function renderMovements(){
+  const code=activeProvince();
+  if(code==='ALL'){
+    document.getElementById('movScope').innerHTML='🌍 <b>Vue nationale sélectionnée</b> — choisissez une province précise ci-dessus pour voir ses mouvements importés.';
+    document.getElementById('movRows').innerHTML='<tr><td colspan="10" class="empty">Choisissez une province.</td></tr>';
+    document.getElementById('movCount').textContent='';
+    return;
+  }
+  const d=getData(code);
+  document.getElementById('movScope').innerHTML='Province : <b>'+esc(provName(code))+'</b> · détail des écritures importées depuis TomPro';
+  const sites=[...new Set(d.tompMovements.map(m=>m.site).filter(Boolean))].sort();
+  const journals=[...new Set(d.tompMovements.map(m=>m.journal).filter(Boolean))].sort();
+  const selSite=document.getElementById('movFilterSite'), selJournal=document.getElementById('movFilterJournal');
+  const curSite=selSite.value, curJournal=selJournal.value;
+  selSite.innerHTML='<option value="">Tous les sites</option>'+sites.map(s=>`<option ${s===curSite?'selected':''}>${esc(s)}</option>`).join('');
+  selJournal.innerHTML='<option value="">Tous les journaux</option>'+journals.map(j=>`<option ${j===curJournal?'selected':''}>${esc(j)}</option>`).join('');
+  const term=(document.getElementById('movSearch').value||'').toLowerCase();
+  let list=d.tompMovements.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(a.piece||'').localeCompare(b.piece||''));
+  if(term)list=list.filter(m=>(m.piece+' '+m.compte+' '+m.libelle+' '+m.refOp).toLowerCase().includes(term));
+  if(curSite)list=list.filter(m=>m.site===curSite);
+  if(curJournal)list=list.filter(m=>m.journal===curJournal);
+  document.getElementById('movCount').textContent=list.length+' ligne(s)';
+  document.getElementById('movRows').innerHTML=list.length?list.map(m=>
+    `<tr><td class="center">${m.date||''}</td><td><code>${esc(m.piece)}</code></td><td class="center">${esc(m.site)}</td>
+     <td>${esc(m.compte)}</td><td class="small">${esc((m.libelle||'').slice(0,80))}</td>
+     <td class="num">${m.debit?fmt(m.debit):''}</td><td class="num">${m.credit?fmt(m.credit):''}</td>
+     <td class="center">${esc(m.journal)}</td><td class="center">${esc(m.interv)}</td><td class="small">${esc(m.refOp)}</td></tr>`).join('')
+    :'<tr><td colspan="10" class="empty">Aucun mouvement importé pour cette province. Utilisez « 📊 Importer depuis TomPro » sur la page Avances.</td></tr>';
+}
+function exportMovements(){
+  const code=activeProvince();if(code==='ALL')return toast('Choisissez une province précise.','warn');
+  const d=getData(code);
+  const aoa=[['Date','N° pièce','Site','Compte','Libellé','Débit','Crédit','Journal','Interv.','ACTIVITES','Cost_imput','Financement Catégorie','Réf. OP']];
+  d.tompMovements.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(m=>
+    aoa.push([m.date,m.piece,m.site,m.compte,m.libelle,m.debit||'',m.credit||'',m.journal,m.interv,m.activites,m.costImput,m.financeCat,m.refOp]));
+  dl(aoa,'MouvementsTomPro_'+provName(code).replace(/\W+/g,'_'));
 }
 function doImport(type,inp){const f=inp.files[0];if(!f)return;const code=activeProvince(),d=getData(code);
   readSheet(f,rows=>{let n=0;
